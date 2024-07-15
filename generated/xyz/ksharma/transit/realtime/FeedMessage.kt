@@ -28,7 +28,21 @@ import kotlin.Unit
 import kotlin.collections.List
 import okio.ByteString
 
+/**
+ * The contents of a feed message.
+ * A feed is a continuous stream of feed messages. Each message in the stream is
+ * obtained as a response to an appropriate HTTP GET request.
+ * A realtime feed is always defined with relation to an existing GTFS feed.
+ * All the entity ids are resolved with respect to the GTFS feed.
+ * Note that "required" and "optional" as stated in this file refer to Protocol
+ * Buffer cardinality, not semantic cardinality.  See reference.md at
+ * https://github.com/google/transit/tree/master/gtfs-realtime for field
+ * semantic cardinality.
+ */
 public class FeedMessage(
+  /**
+   * Metadata about this feed and feed message.
+   */
   @field:WireField(
     tag = 1,
     adapter = "xyz.ksharma.transit.realtime.FeedHeader#ADAPTER",
@@ -41,6 +55,9 @@ public class FeedMessage(
   entity: List<FeedEntity> = emptyList(),
   unknownFields: ByteString = ByteString.EMPTY,
 ) : Message<FeedMessage, FeedMessage.Builder>(ADAPTER, unknownFields) {
+  /**
+   * Contents of the feed.
+   */
   @field:WireField(
     tag = 2,
     adapter = "xyz.ksharma.transit.realtime.FeedEntity#ADAPTER",
@@ -98,11 +115,17 @@ public class FeedMessage(
     @JvmField
     public var entity: List<FeedEntity> = emptyList()
 
+    /**
+     * Metadata about this feed and feed message.
+     */
     public fun header_(header_: FeedHeader?): Builder {
       this.header_ = header_
       return this
     }
 
+    /**
+     * Contents of the feed.
+     */
     public fun entity(entity: List<FeedEntity>): Builder {
       checkElementsNotNull(entity)
       this.entity = entity
