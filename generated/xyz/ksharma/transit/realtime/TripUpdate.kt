@@ -32,7 +32,44 @@ import kotlin.Unit
 import kotlin.collections.List
 import okio.ByteString
 
+/**
+ *
+ * Entities used in the feed.
+ *
+ * Realtime update of the progress of a vehicle along a trip.
+ * Depending on the value of ScheduleRelationship, a TripUpdate can specify:
+ * - A trip that proceeds along the schedule.
+ * - A trip that proceeds along a route but has no fixed schedule.
+ * - A trip that have been added or removed with regard to schedule.
+ *
+ * The updates can be for future, predicted arrival/departure events, or for
+ * past events that already occurred.
+ * Normally, updates should get more precise and more certain (see
+ * uncertainty below) as the events gets closer to current time.
+ * Even if that is not possible, the information for past events should be
+ * precise and certain. In particular, if an update points to time in the past
+ * but its update's uncertainty is not 0, the client should conclude that the
+ * update is a (wrong) prediction and that the trip has not completed yet.
+ *
+ * Note that the update can describe a trip that is already completed.
+ * To this end, it is enough to provide an update for the last stop of the trip.
+ * If the time of that is in the past, the client will conclude from that that
+ * the whole trip is in the past (it is possible, although inconsequential, to
+ * also provide updates for preceding stops).
+ * This option is most relevant for a trip that has completed ahead of schedule,
+ * but according to the schedule, the trip is still proceeding at the current
+ * time. Removing the updates for this trip could make the client assume
+ * that the trip is still proceeding.
+ * Note that the feed provider is allowed, but not required, to purge past
+ * updates - this is one case where this would be practically useful.
+ */
 public class TripUpdate(
+  /**
+   * The Trip that this message applies to. There can be at most one
+   * TripUpdate entity for each actual trip instance.
+   * If there is none, that means there is no prediction information available.
+   * It does *not* mean that the trip is progressing according to schedule.
+   */
   @field:WireField(
     tag = 1,
     adapter = "xyz.ksharma.transit.realtime.TripDescriptor#ADAPTER",
@@ -41,6 +78,9 @@ public class TripUpdate(
   )
   @JvmField
   public val trip: TripDescriptor,
+  /**
+   * Additional information on the vehicle that is serving this trip.
+   */
   @field:WireField(
     tag = 3,
     adapter = "xyz.ksharma.transit.realtime.VehicleDescriptor#ADAPTER",
@@ -49,6 +89,12 @@ public class TripUpdate(
   @JvmField
   public val vehicle: VehicleDescriptor? = null,
   stop_time_update: List<StopTimeUpdate> = emptyList(),
+  /**
+   * The most recent moment at which the vehicle's real-time progress was measured
+   * to estimate StopTimes in the future. When StopTimes in the past are provided,
+   * arrival/departure times may be earlier than this value. In POSIX
+   * time (i.e., the number of seconds since January 1st 1970 00:00:00 UTC).
+   */
   @field:WireField(
     tag = 4,
     adapter = "com.squareup.wire.ProtoAdapter#UINT64",
@@ -57,7 +103,24 @@ public class TripUpdate(
   @JvmField
   public val timestamp: Long? = null,
   /**
-   * NEW
+   * The current schedule deviation for the trip.  Delay should only be
+   * specified when the prediction is given relative to some existing schedule
+   * in GTFS.
+   *
+   * Delay (in seconds) can be positive (meaning that the vehicle is late) or
+   * negative (meaning that the vehicle is ahead of schedule). Delay of 0
+   * means that the vehicle is exactly on time.
+   *
+   * Delay information in StopTimeUpdates take precedent of trip-level delay
+   * information, such that trip-level delay is only propagated until the next
+   * stop along the trip with a StopTimeUpdate delay value specified.
+   *
+   * Feed providers are strongly encouraged to provide a TripUpdate.timestamp
+   * value indicating when the delay value was last updated, in order to
+   * evaluate the freshness of the data.
+   *
+   * NOTE: This field is still experimental, and subject to change. It may be
+   * formally adopted in the future.
    */
   @field:WireField(
     tag = 5,
@@ -66,8 +129,36 @@ public class TripUpdate(
   )
   @JvmField
   public val delay: Int? = null,
+  @field:WireField(
+    tag = 6,
+    adapter = "xyz.ksharma.transit.realtime.TripUpdate${'$'}TripProperties#ADAPTER",
+    schemaIndex = 5,
+  )
+  @JvmField
+  public val trip_properties: TripProperties? = null,
   unknownFields: ByteString = ByteString.EMPTY,
 ) : Message<TripUpdate, TripUpdate.Builder>(ADAPTER, unknownFields) {
+  /**
+   * Updates to StopTimes for the trip (both future, i.e., predictions, and in
+   * some cases, past ones, i.e., those that already happened).
+   * The updates must be sorted by stop_sequence, and apply for all the
+   * following stops of the trip up to the next specified one.
+   *
+   * Example 1:
+   * For a trip with 20 stops, a StopTimeUpdate with arrival delay and departure
+   * delay of 0 for stop_sequence of the current stop means that the trip is
+   * exactly on time.
+   *
+   * Example 2:
+   * For the same trip instance, 3 StopTimeUpdates are provided:
+   * - delay of 5 min for stop_sequence 3
+   * - delay of 1 min for stop_sequence 8
+   * - delay of unspecified duration for stop_sequence 10
+   * This will be interpreted as:
+   * - stop_sequences 3,4,5,6,7 have delay of 5 min.
+   * - stop_sequences 8,9 have delay of 1 min.
+   * - stop_sequences 10,... have unknown delay.
+   */
   @field:WireField(
     tag = 2,
     adapter = "xyz.ksharma.transit.realtime.TripUpdate${'$'}StopTimeUpdate#ADAPTER",
@@ -85,6 +176,7 @@ public class TripUpdate(
     builder.stop_time_update = stop_time_update
     builder.timestamp = timestamp
     builder.delay = delay
+    builder.trip_properties = trip_properties
     builder.addUnknownFields(unknownFields)
     return builder
   }
@@ -98,6 +190,7 @@ public class TripUpdate(
     if (stop_time_update != other.stop_time_update) return false
     if (timestamp != other.timestamp) return false
     if (delay != other.delay) return false
+    if (trip_properties != other.trip_properties) return false
     return true
   }
 
@@ -110,6 +203,7 @@ public class TripUpdate(
       result = result * 37 + stop_time_update.hashCode()
       result = result * 37 + (timestamp?.hashCode() ?: 0)
       result = result * 37 + (delay?.hashCode() ?: 0)
+      result = result * 37 + (trip_properties?.hashCode() ?: 0)
       super.hashCode = result
     }
     return result
@@ -122,6 +216,7 @@ public class TripUpdate(
     if (stop_time_update.isNotEmpty()) result += """stop_time_update=$stop_time_update"""
     if (timestamp != null) result += """timestamp=$timestamp"""
     if (delay != null) result += """delay=$delay"""
+    if (trip_properties != null) result += """trip_properties=$trip_properties"""
     return result.joinToString(prefix = "TripUpdate{", separator = ", ", postfix = "}")
   }
 
@@ -131,8 +226,10 @@ public class TripUpdate(
     stop_time_update: List<StopTimeUpdate> = this.stop_time_update,
     timestamp: Long? = this.timestamp,
     delay: Int? = this.delay,
+    trip_properties: TripProperties? = this.trip_properties,
     unknownFields: ByteString = this.unknownFields,
-  ): TripUpdate = TripUpdate(trip, vehicle, stop_time_update, timestamp, delay, unknownFields)
+  ): TripUpdate = TripUpdate(trip, vehicle, stop_time_update, timestamp, delay, trip_properties,
+      unknownFields)
 
   public class Builder : Message.Builder<TripUpdate, Builder>() {
     @JvmField
@@ -150,32 +247,93 @@ public class TripUpdate(
     @JvmField
     public var delay: Int? = null
 
+    @JvmField
+    public var trip_properties: TripProperties? = null
+
+    /**
+     * The Trip that this message applies to. There can be at most one
+     * TripUpdate entity for each actual trip instance.
+     * If there is none, that means there is no prediction information available.
+     * It does *not* mean that the trip is progressing according to schedule.
+     */
     public fun trip(trip: TripDescriptor?): Builder {
       this.trip = trip
       return this
     }
 
+    /**
+     * Additional information on the vehicle that is serving this trip.
+     */
     public fun vehicle(vehicle: VehicleDescriptor?): Builder {
       this.vehicle = vehicle
       return this
     }
 
+    /**
+     * Updates to StopTimes for the trip (both future, i.e., predictions, and in
+     * some cases, past ones, i.e., those that already happened).
+     * The updates must be sorted by stop_sequence, and apply for all the
+     * following stops of the trip up to the next specified one.
+     *
+     * Example 1:
+     * For a trip with 20 stops, a StopTimeUpdate with arrival delay and departure
+     * delay of 0 for stop_sequence of the current stop means that the trip is
+     * exactly on time.
+     *
+     * Example 2:
+     * For the same trip instance, 3 StopTimeUpdates are provided:
+     * - delay of 5 min for stop_sequence 3
+     * - delay of 1 min for stop_sequence 8
+     * - delay of unspecified duration for stop_sequence 10
+     * This will be interpreted as:
+     * - stop_sequences 3,4,5,6,7 have delay of 5 min.
+     * - stop_sequences 8,9 have delay of 1 min.
+     * - stop_sequences 10,... have unknown delay.
+     */
     public fun stop_time_update(stop_time_update: List<StopTimeUpdate>): Builder {
       checkElementsNotNull(stop_time_update)
       this.stop_time_update = stop_time_update
       return this
     }
 
+    /**
+     * The most recent moment at which the vehicle's real-time progress was measured
+     * to estimate StopTimes in the future. When StopTimes in the past are provided,
+     * arrival/departure times may be earlier than this value. In POSIX
+     * time (i.e., the number of seconds since January 1st 1970 00:00:00 UTC).
+     */
     public fun timestamp(timestamp: Long?): Builder {
       this.timestamp = timestamp
       return this
     }
 
     /**
-     * NEW
+     * The current schedule deviation for the trip.  Delay should only be
+     * specified when the prediction is given relative to some existing schedule
+     * in GTFS.
+     *
+     * Delay (in seconds) can be positive (meaning that the vehicle is late) or
+     * negative (meaning that the vehicle is ahead of schedule). Delay of 0
+     * means that the vehicle is exactly on time.
+     *
+     * Delay information in StopTimeUpdates take precedent of trip-level delay
+     * information, such that trip-level delay is only propagated until the next
+     * stop along the trip with a StopTimeUpdate delay value specified.
+     *
+     * Feed providers are strongly encouraged to provide a TripUpdate.timestamp
+     * value indicating when the delay value was last updated, in order to
+     * evaluate the freshness of the data.
+     *
+     * NOTE: This field is still experimental, and subject to change. It may be
+     * formally adopted in the future.
      */
     public fun delay(delay: Int?): Builder {
       this.delay = delay
+      return this
+    }
+
+    public fun trip_properties(trip_properties: TripProperties?): Builder {
+      this.trip_properties = trip_properties
       return this
     }
 
@@ -185,6 +343,7 @@ public class TripUpdate(
       stop_time_update = stop_time_update,
       timestamp = timestamp,
       delay = delay,
+      trip_properties = trip_properties,
       unknownFields = buildUnknownFields()
     )
   }
@@ -206,6 +365,7 @@ public class TripUpdate(
         size += StopTimeUpdate.ADAPTER.asRepeated().encodedSizeWithTag(2, value.stop_time_update)
         size += ProtoAdapter.UINT64.encodedSizeWithTag(4, value.timestamp)
         size += ProtoAdapter.INT32.encodedSizeWithTag(5, value.delay)
+        size += TripProperties.ADAPTER.encodedSizeWithTag(6, value.trip_properties)
         return size
       }
 
@@ -215,11 +375,13 @@ public class TripUpdate(
         StopTimeUpdate.ADAPTER.asRepeated().encodeWithTag(writer, 2, value.stop_time_update)
         ProtoAdapter.UINT64.encodeWithTag(writer, 4, value.timestamp)
         ProtoAdapter.INT32.encodeWithTag(writer, 5, value.delay)
+        TripProperties.ADAPTER.encodeWithTag(writer, 6, value.trip_properties)
         writer.writeBytes(value.unknownFields)
       }
 
       override fun encode(writer: ReverseProtoWriter, `value`: TripUpdate) {
         writer.writeBytes(value.unknownFields)
+        TripProperties.ADAPTER.encodeWithTag(writer, 6, value.trip_properties)
         ProtoAdapter.INT32.encodeWithTag(writer, 5, value.delay)
         ProtoAdapter.UINT64.encodeWithTag(writer, 4, value.timestamp)
         StopTimeUpdate.ADAPTER.asRepeated().encodeWithTag(writer, 2, value.stop_time_update)
@@ -233,6 +395,7 @@ public class TripUpdate(
         val stop_time_update = mutableListOf<StopTimeUpdate>()
         var timestamp: Long? = null
         var delay: Int? = null
+        var trip_properties: TripProperties? = null
         val unknownFields = reader.forEachTag { tag ->
           when (tag) {
             1 -> trip = TripDescriptor.ADAPTER.decode(reader)
@@ -240,6 +403,7 @@ public class TripUpdate(
             2 -> stop_time_update.add(StopTimeUpdate.ADAPTER.decode(reader))
             4 -> timestamp = ProtoAdapter.UINT64.decode(reader)
             5 -> delay = ProtoAdapter.INT32.decode(reader)
+            6 -> trip_properties = TripProperties.ADAPTER.decode(reader)
             else -> reader.readUnknownField(tag)
           }
         }
@@ -249,6 +413,7 @@ public class TripUpdate(
           stop_time_update = stop_time_update,
           timestamp = timestamp,
           delay = delay,
+          trip_properties = trip_properties,
           unknownFields = unknownFields
         )
       }
@@ -257,6 +422,7 @@ public class TripUpdate(
         trip = TripDescriptor.ADAPTER.redact(value.trip),
         vehicle = value.vehicle?.let(VehicleDescriptor.ADAPTER::redact),
         stop_time_update = value.stop_time_update.redactElements(StopTimeUpdate.ADAPTER),
+        trip_properties = value.trip_properties?.let(TripProperties.ADAPTER::redact),
         unknownFields = ByteString.EMPTY
       )
     }
@@ -267,7 +433,29 @@ public class TripUpdate(
     public inline fun build(body: Builder.() -> Unit): TripUpdate = Builder().apply(body).build()
   }
 
+  /**
+   * Timing information for a single predicted event (either arrival or
+   * departure).
+   * Timing consists of delay and/or estimated time, and uncertainty.
+   * - delay should be used when the prediction is given relative to some
+   *   existing schedule in GTFS.
+   * - time should be given whether there is a predicted schedule or not. If
+   *   both time and delay are specified, time will take precedence
+   *   (although normally, time, if given for a scheduled trip, should be
+   *   equal to scheduled time in GTFS + delay).
+   *
+   * Uncertainty applies equally to both time and delay.
+   * The uncertainty roughly specifies the expected error in true delay (but
+   * note, we don't yet define its precise statistical meaning). It's possible
+   * for the uncertainty to be 0, for example for trains that are driven under
+   * computer timing control.
+   */
   public class StopTimeEvent(
+    /**
+     * Delay (in seconds) can be positive (meaning that the vehicle is late) or
+     * negative (meaning that the vehicle is ahead of schedule). Delay of 0
+     * means that the vehicle is exactly on time.
+     */
     @field:WireField(
       tag = 1,
       adapter = "com.squareup.wire.ProtoAdapter#INT32",
@@ -275,6 +463,11 @@ public class TripUpdate(
     )
     @JvmField
     public val delay: Int? = null,
+    /**
+     * Event as absolute time.
+     * In Unix time (i.e., number of seconds since January 1st 1970 00:00:00
+     * UTC).
+     */
     @field:WireField(
       tag = 2,
       adapter = "com.squareup.wire.ProtoAdapter#INT64",
@@ -282,6 +475,12 @@ public class TripUpdate(
     )
     @JvmField
     public val time: Long? = null,
+    /**
+     * If uncertainty is omitted, it is interpreted as unknown.
+     * If the prediction is unknown or too uncertain, the delay (or time) field
+     * should be empty. In such case, the uncertainty field is ignored.
+     * To specify a completely certain prediction, set its uncertainty to 0.
+     */
     @field:WireField(
       tag = 3,
       adapter = "com.squareup.wire.ProtoAdapter#INT32",
@@ -347,16 +546,32 @@ public class TripUpdate(
       @JvmField
       public var uncertainty: Int? = null
 
+      /**
+       * Delay (in seconds) can be positive (meaning that the vehicle is late) or
+       * negative (meaning that the vehicle is ahead of schedule). Delay of 0
+       * means that the vehicle is exactly on time.
+       */
       public fun delay(delay: Int?): Builder {
         this.delay = delay
         return this
       }
 
+      /**
+       * Event as absolute time.
+       * In Unix time (i.e., number of seconds since January 1st 1970 00:00:00
+       * UTC).
+       */
       public fun time(time: Long?): Builder {
         this.time = time
         return this
       }
 
+      /**
+       * If uncertainty is omitted, it is interpreted as unknown.
+       * If the prediction is unknown or too uncertain, the delay (or time) field
+       * should be empty. In such case, the uncertainty field is ignored.
+       * To specify a completely certain prediction, set its uncertainty to 0.
+       */
       public fun uncertainty(uncertainty: Int?): Builder {
         this.uncertainty = uncertainty
         return this
@@ -435,7 +650,18 @@ public class TripUpdate(
     }
   }
 
+  /**
+   * Realtime update for arrival and/or departure events for a given stop on a
+   * trip. Updates can be supplied for both past and future events.
+   * The producer is allowed, although not required, to drop past events.
+   */
   public class StopTimeUpdate(
+    /**
+     * The update is linked to a specific stop either through stop_sequence or
+     * stop_id, so one of the fields below must necessarily be set.
+     * See the documentation in TripDescriptor for more information.
+     * Must be the same as in stop_times.txt in the corresponding GTFS feed.
+     */
     @field:WireField(
       tag = 1,
       adapter = "com.squareup.wire.ProtoAdapter#UINT32",
@@ -443,6 +669,9 @@ public class TripUpdate(
     )
     @JvmField
     public val stop_sequence: Int? = null,
+    /**
+     * Must be the same as in stops.txt in the corresponding GTFS feed.
+     */
     @field:WireField(
       tag = 4,
       adapter = "com.squareup.wire.ProtoAdapter#STRING",
@@ -464,48 +693,51 @@ public class TripUpdate(
     )
     @JvmField
     public val departure: StopTimeEvent? = null,
+    /**
+     * Expected occupancy after departure from the given stop.
+     * Should be provided only for future stops.
+     * In order to provide departure_occupancy_status without either arrival or
+     * departure StopTimeEvents, ScheduleRelationship should be set to NO_DATA.
+     */
+    @field:WireField(
+      tag = 7,
+      adapter = "xyz.ksharma.transit.realtime.VehiclePosition${'$'}OccupancyStatus#ADAPTER",
+      schemaIndex = 4,
+    )
+    @JvmField
+    public val departure_occupancy_status: VehiclePosition.OccupancyStatus? = null,
     @field:WireField(
       tag = 5,
       adapter =
           "xyz.ksharma.transit.realtime.TripUpdate${'$'}StopTimeUpdate${'$'}ScheduleRelationship#ADAPTER",
-      schemaIndex = 4,
-    )
-    @JvmField
-    public val schedule_relationship: ScheduleRelationship? = null,
-    @field:WireField(
-      tag = 6,
-      adapter =
-          "xyz.ksharma.transit.realtime.TripUpdate${'$'}StopTimeUpdate${'$'}OccupancyStatus#ADAPTER",
       schemaIndex = 5,
     )
     @JvmField
-    public val departure_occupancy_status: OccupancyStatus? = null,
-    carriage_seq_predictive_occupancy: List<CarriageDescriptor> = emptyList(),
-    unknownFields: ByteString = ByteString.EMPTY,
-  ) : Message<StopTimeUpdate, StopTimeUpdate.Builder>(ADAPTER, unknownFields) {
+    public val schedule_relationship: ScheduleRelationship? = null,
     /**
-     * NEW - 22/2/22 - Predictive Real Time Occupancy added to TripUpdate->Stop Time Update
-     * Extension source: xyz/ksharma/transport/gtfs_realtime.proto
+     * Realtime updates for certain properties defined within GTFS stop_times.txt
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
      */
     @field:WireField(
-      tag = 1_007,
-      adapter = "xyz.ksharma.transit.realtime.CarriageDescriptor#ADAPTER",
-      label = WireField.Label.REPEATED,
+      tag = 6,
+      adapter =
+          "xyz.ksharma.transit.realtime.TripUpdate${'$'}StopTimeUpdate${'$'}StopTimeProperties#ADAPTER",
       schemaIndex = 6,
     )
     @JvmField
-    public val carriage_seq_predictive_occupancy: List<CarriageDescriptor> =
-        immutableCopyOf("carriage_seq_predictive_occupancy", carriage_seq_predictive_occupancy)
-
+    public val stop_time_properties: StopTimeProperties? = null,
+    unknownFields: ByteString = ByteString.EMPTY,
+  ) : Message<StopTimeUpdate, StopTimeUpdate.Builder>(ADAPTER, unknownFields) {
     override fun newBuilder(): Builder {
       val builder = Builder()
       builder.stop_sequence = stop_sequence
       builder.stop_id = stop_id
       builder.arrival = arrival
       builder.departure = departure
-      builder.schedule_relationship = schedule_relationship
       builder.departure_occupancy_status = departure_occupancy_status
-      builder.carriage_seq_predictive_occupancy = carriage_seq_predictive_occupancy
+      builder.schedule_relationship = schedule_relationship
+      builder.stop_time_properties = stop_time_properties
       builder.addUnknownFields(unknownFields)
       return builder
     }
@@ -518,9 +750,9 @@ public class TripUpdate(
       if (stop_id != other.stop_id) return false
       if (arrival != other.arrival) return false
       if (departure != other.departure) return false
-      if (schedule_relationship != other.schedule_relationship) return false
       if (departure_occupancy_status != other.departure_occupancy_status) return false
-      if (carriage_seq_predictive_occupancy != other.carriage_seq_predictive_occupancy) return false
+      if (schedule_relationship != other.schedule_relationship) return false
+      if (stop_time_properties != other.stop_time_properties) return false
       return true
     }
 
@@ -532,9 +764,9 @@ public class TripUpdate(
         result = result * 37 + (stop_id?.hashCode() ?: 0)
         result = result * 37 + (arrival?.hashCode() ?: 0)
         result = result * 37 + (departure?.hashCode() ?: 0)
-        result = result * 37 + (schedule_relationship?.hashCode() ?: 0)
         result = result * 37 + (departure_occupancy_status?.hashCode() ?: 0)
-        result = result * 37 + carriage_seq_predictive_occupancy.hashCode()
+        result = result * 37 + (schedule_relationship?.hashCode() ?: 0)
+        result = result * 37 + (stop_time_properties?.hashCode() ?: 0)
         super.hashCode = result
       }
       return result
@@ -546,12 +778,11 @@ public class TripUpdate(
       if (stop_id != null) result += """stop_id=${sanitize(stop_id)}"""
       if (arrival != null) result += """arrival=$arrival"""
       if (departure != null) result += """departure=$departure"""
-      if (schedule_relationship != null) result +=
-          """schedule_relationship=$schedule_relationship"""
       if (departure_occupancy_status != null) result +=
           """departure_occupancy_status=$departure_occupancy_status"""
-      if (carriage_seq_predictive_occupancy.isNotEmpty()) result +=
-          """carriage_seq_predictive_occupancy=$carriage_seq_predictive_occupancy"""
+      if (schedule_relationship != null) result +=
+          """schedule_relationship=$schedule_relationship"""
+      if (stop_time_properties != null) result += """stop_time_properties=$stop_time_properties"""
       return result.joinToString(prefix = "StopTimeUpdate{", separator = ", ", postfix = "}")
     }
 
@@ -560,14 +791,13 @@ public class TripUpdate(
       stop_id: String? = this.stop_id,
       arrival: StopTimeEvent? = this.arrival,
       departure: StopTimeEvent? = this.departure,
+      departure_occupancy_status: VehiclePosition.OccupancyStatus? =
+          this.departure_occupancy_status,
       schedule_relationship: ScheduleRelationship? = this.schedule_relationship,
-      departure_occupancy_status: OccupancyStatus? = this.departure_occupancy_status,
-      carriage_seq_predictive_occupancy: List<CarriageDescriptor> =
-          this.carriage_seq_predictive_occupancy,
+      stop_time_properties: StopTimeProperties? = this.stop_time_properties,
       unknownFields: ByteString = this.unknownFields,
     ): StopTimeUpdate = StopTimeUpdate(stop_sequence, stop_id, arrival, departure,
-        schedule_relationship, departure_occupancy_status, carriage_seq_predictive_occupancy,
-        unknownFields)
+        departure_occupancy_status, schedule_relationship, stop_time_properties, unknownFields)
 
     public class Builder : Message.Builder<StopTimeUpdate, Builder>() {
       @JvmField
@@ -583,19 +813,28 @@ public class TripUpdate(
       public var departure: StopTimeEvent? = null
 
       @JvmField
+      public var departure_occupancy_status: VehiclePosition.OccupancyStatus? = null
+
+      @JvmField
       public var schedule_relationship: ScheduleRelationship? = null
 
       @JvmField
-      public var departure_occupancy_status: OccupancyStatus? = null
+      public var stop_time_properties: StopTimeProperties? = null
 
-      @JvmField
-      public var carriage_seq_predictive_occupancy: List<CarriageDescriptor> = emptyList()
-
+      /**
+       * The update is linked to a specific stop either through stop_sequence or
+       * stop_id, so one of the fields below must necessarily be set.
+       * See the documentation in TripDescriptor for more information.
+       * Must be the same as in stop_times.txt in the corresponding GTFS feed.
+       */
       public fun stop_sequence(stop_sequence: Int?): Builder {
         this.stop_sequence = stop_sequence
         return this
       }
 
+      /**
+       * Must be the same as in stops.txt in the corresponding GTFS feed.
+       */
       public fun stop_id(stop_id: String?): Builder {
         this.stop_id = stop_id
         return this
@@ -611,24 +850,31 @@ public class TripUpdate(
         return this
       }
 
+      /**
+       * Expected occupancy after departure from the given stop.
+       * Should be provided only for future stops.
+       * In order to provide departure_occupancy_status without either arrival or
+       * departure StopTimeEvents, ScheduleRelationship should be set to NO_DATA.
+       */
+      public
+          fun departure_occupancy_status(departure_occupancy_status: VehiclePosition.OccupancyStatus?):
+          Builder {
+        this.departure_occupancy_status = departure_occupancy_status
+        return this
+      }
+
       public fun schedule_relationship(schedule_relationship: ScheduleRelationship?): Builder {
         this.schedule_relationship = schedule_relationship
         return this
       }
 
-      public fun departure_occupancy_status(departure_occupancy_status: OccupancyStatus?): Builder {
-        this.departure_occupancy_status = departure_occupancy_status
-        return this
-      }
-
       /**
-       * NEW - 22/2/22 - Predictive Real Time Occupancy added to TripUpdate->Stop Time Update
+       * Realtime updates for certain properties defined within GTFS stop_times.txt
+       * NOTE: This field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
        */
-      public
-          fun carriage_seq_predictive_occupancy(carriage_seq_predictive_occupancy: List<CarriageDescriptor>):
-          Builder {
-        checkElementsNotNull(carriage_seq_predictive_occupancy)
-        this.carriage_seq_predictive_occupancy = carriage_seq_predictive_occupancy
+      public fun stop_time_properties(stop_time_properties: StopTimeProperties?): Builder {
+        this.stop_time_properties = stop_time_properties
         return this
       }
 
@@ -637,9 +883,9 @@ public class TripUpdate(
         stop_id = stop_id,
         arrival = arrival,
         departure = departure,
-        schedule_relationship = schedule_relationship,
         departure_occupancy_status = departure_occupancy_status,
-        carriage_seq_predictive_occupancy = carriage_seq_predictive_occupancy,
+        schedule_relationship = schedule_relationship,
+        stop_time_properties = stop_time_properties,
         unknownFields = buildUnknownFields()
       )
     }
@@ -664,10 +910,10 @@ public class TripUpdate(
           size += ProtoAdapter.STRING.encodedSizeWithTag(4, value.stop_id)
           size += StopTimeEvent.ADAPTER.encodedSizeWithTag(2, value.arrival)
           size += StopTimeEvent.ADAPTER.encodedSizeWithTag(3, value.departure)
+          size += VehiclePosition.OccupancyStatus.ADAPTER.encodedSizeWithTag(7,
+              value.departure_occupancy_status)
           size += ScheduleRelationship.ADAPTER.encodedSizeWithTag(5, value.schedule_relationship)
-          size += OccupancyStatus.ADAPTER.encodedSizeWithTag(6, value.departure_occupancy_status)
-          size += CarriageDescriptor.ADAPTER.asRepeated().encodedSizeWithTag(1_007,
-              value.carriage_seq_predictive_occupancy)
+          size += StopTimeProperties.ADAPTER.encodedSizeWithTag(6, value.stop_time_properties)
           return size
         }
 
@@ -676,19 +922,19 @@ public class TripUpdate(
           ProtoAdapter.STRING.encodeWithTag(writer, 4, value.stop_id)
           StopTimeEvent.ADAPTER.encodeWithTag(writer, 2, value.arrival)
           StopTimeEvent.ADAPTER.encodeWithTag(writer, 3, value.departure)
+          VehiclePosition.OccupancyStatus.ADAPTER.encodeWithTag(writer, 7,
+              value.departure_occupancy_status)
           ScheduleRelationship.ADAPTER.encodeWithTag(writer, 5, value.schedule_relationship)
-          OccupancyStatus.ADAPTER.encodeWithTag(writer, 6, value.departure_occupancy_status)
-          CarriageDescriptor.ADAPTER.asRepeated().encodeWithTag(writer, 1_007,
-              value.carriage_seq_predictive_occupancy)
+          StopTimeProperties.ADAPTER.encodeWithTag(writer, 6, value.stop_time_properties)
           writer.writeBytes(value.unknownFields)
         }
 
         override fun encode(writer: ReverseProtoWriter, `value`: StopTimeUpdate) {
           writer.writeBytes(value.unknownFields)
-          CarriageDescriptor.ADAPTER.asRepeated().encodeWithTag(writer, 1_007,
-              value.carriage_seq_predictive_occupancy)
-          OccupancyStatus.ADAPTER.encodeWithTag(writer, 6, value.departure_occupancy_status)
+          StopTimeProperties.ADAPTER.encodeWithTag(writer, 6, value.stop_time_properties)
           ScheduleRelationship.ADAPTER.encodeWithTag(writer, 5, value.schedule_relationship)
+          VehiclePosition.OccupancyStatus.ADAPTER.encodeWithTag(writer, 7,
+              value.departure_occupancy_status)
           StopTimeEvent.ADAPTER.encodeWithTag(writer, 3, value.departure)
           StopTimeEvent.ADAPTER.encodeWithTag(writer, 2, value.arrival)
           ProtoAdapter.STRING.encodeWithTag(writer, 4, value.stop_id)
@@ -700,27 +946,26 @@ public class TripUpdate(
           var stop_id: String? = null
           var arrival: StopTimeEvent? = null
           var departure: StopTimeEvent? = null
+          var departure_occupancy_status: VehiclePosition.OccupancyStatus? = null
           var schedule_relationship: ScheduleRelationship? = null
-          var departure_occupancy_status: OccupancyStatus? = null
-          val carriage_seq_predictive_occupancy = mutableListOf<CarriageDescriptor>()
+          var stop_time_properties: StopTimeProperties? = null
           val unknownFields = reader.forEachTag { tag ->
             when (tag) {
               1 -> stop_sequence = ProtoAdapter.UINT32.decode(reader)
               4 -> stop_id = ProtoAdapter.STRING.decode(reader)
               2 -> arrival = StopTimeEvent.ADAPTER.decode(reader)
               3 -> departure = StopTimeEvent.ADAPTER.decode(reader)
+              7 -> try {
+                departure_occupancy_status = VehiclePosition.OccupancyStatus.ADAPTER.decode(reader)
+              } catch (e: ProtoAdapter.EnumConstantNotFoundException) {
+                reader.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
+              }
               5 -> try {
                 schedule_relationship = ScheduleRelationship.ADAPTER.decode(reader)
               } catch (e: ProtoAdapter.EnumConstantNotFoundException) {
                 reader.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
               }
-              6 -> try {
-                departure_occupancy_status = OccupancyStatus.ADAPTER.decode(reader)
-              } catch (e: ProtoAdapter.EnumConstantNotFoundException) {
-                reader.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
-              }
-              1_007 ->
-                  carriage_seq_predictive_occupancy.add(CarriageDescriptor.ADAPTER.decode(reader))
+              6 -> stop_time_properties = StopTimeProperties.ADAPTER.decode(reader)
               else -> reader.readUnknownField(tag)
             }
           }
@@ -729,9 +974,9 @@ public class TripUpdate(
             stop_id = stop_id,
             arrival = arrival,
             departure = departure,
-            schedule_relationship = schedule_relationship,
             departure_occupancy_status = departure_occupancy_status,
-            carriage_seq_predictive_occupancy = carriage_seq_predictive_occupancy,
+            schedule_relationship = schedule_relationship,
+            stop_time_properties = stop_time_properties,
             unknownFields = unknownFields
           )
         }
@@ -739,8 +984,8 @@ public class TripUpdate(
         override fun redact(`value`: StopTimeUpdate): StopTimeUpdate = value.copy(
           arrival = value.arrival?.let(StopTimeEvent.ADAPTER::redact),
           departure = value.departure?.let(StopTimeEvent.ADAPTER::redact),
-          carriage_seq_predictive_occupancy =
-              value.carriage_seq_predictive_occupancy.redactElements(CarriageDescriptor.ADAPTER),
+          stop_time_properties =
+              value.stop_time_properties?.let(StopTimeProperties.ADAPTER::redact),
           unknownFields = ByteString.EMPTY
         )
       }
@@ -752,14 +997,43 @@ public class TripUpdate(
           Builder().apply(body).build()
     }
 
+    /**
+     * The relation between the StopTimeEvents and the static schedule.
+     */
     public enum class ScheduleRelationship(
       override val `value`: Int,
     ) : WireEnum {
+      /**
+       * The vehicle is proceeding in accordance with its static schedule of
+       * stops, although not necessarily according to the times of the schedule.
+       * At least one of arrival and departure must be provided. If the schedule
+       * for this stop contains both arrival and departure times then so must
+       * this update. Frequency-based trips (GTFS frequencies.txt with exact_times = 0)
+       * should not have a SCHEDULED value and should use UNSCHEDULED instead.
+       */
       SCHEDULED(0),
+      /**
+       * The stop is skipped, i.e., the vehicle will not stop at this stop.
+       * Arrival and departure are optional.
+       */
       SKIPPED(1),
+      /**
+       * No StopTimeEvents are given for this stop.
+       * The main intention for this value is to give time predictions only for
+       * part of a trip, i.e., if the last update for a trip has a NO_DATA
+       * specifier, then StopTimeEvents for the rest of the stops in the trip
+       * are considered to be unspecified as well.
+       * Neither arrival nor departure should be supplied.
+       */
       NO_DATA(2),
       /**
-       * NEW
+       * The vehicle is operating a trip defined in GTFS frequencies.txt with exact_times = 0.
+       * This value should not be used for trips that are not defined in GTFS frequencies.txt,
+       * or trips in GTFS frequencies.txt with exact_times = 1. Trips containing StopTimeUpdates
+       * with ScheduleRelationship=UNSCHEDULED must also set
+       * TripDescriptor.ScheduleRelationship=UNSCHEDULED.
+       * NOTE: This field is still experimental, and subject to change. It may be
+       * formally adopted in the future.
        */
       UNSCHEDULED(3),
       ;
@@ -787,41 +1061,495 @@ public class TripUpdate(
       }
     }
 
-    public enum class OccupancyStatus(
-      override val `value`: Int,
-    ) : WireEnum {
-      EMPTY(0),
-      MANY_SEATS_AVAILABLE(1),
-      FEW_SEATS_AVAILABLE(2),
-      STANDING_ROOM_ONLY(3),
-      CRUSHED_STANDING_ROOM_ONLY(4),
-      FULL(5),
-      NOT_ACCEPTING_PASSENGERS(6),
-      ;
+    /**
+     * Provides the updated values for the stop time.
+     * NOTE: This message is still experimental, and subject to change. It may be formally adopted
+     * in the future.
+     */
+    public class StopTimeProperties(
+      /**
+       * Supports real-time stop assignments. Refers to a stop_id defined in the GTFS stops.txt.
+       * The new assigned_stop_id should not result in a significantly different trip experience for
+       * the end user than
+       * the stop_id defined in GTFS stop_times.txt. In other words, the end user should not view
+       * this new stop_id as an
+       * "unusual change" if the new stop was presented within an app without any additional
+       * context.
+       * For example, this field is intended to be used for platform assignments by using a stop_id
+       * that belongs to the
+       * same station as the stop originally defined in GTFS stop_times.txt.
+       * To assign a stop without providing any real-time arrival or departure predictions, populate
+       * this field and set
+       * StopTimeUpdate.schedule_relationship = NO_DATA.
+       * If this field is populated, it is preferred to omit `StopTimeUpdate.stop_id` and use only
+       * `StopTimeUpdate.stop_sequence`. If
+       * `StopTimeProperties.assigned_stop_id` and `StopTimeUpdate.stop_id` are populated,
+       * `StopTimeUpdate.stop_id` must match `assigned_stop_id`.
+       * Platform assignments should be reflected in other GTFS-realtime fields as well
+       * (e.g., `VehiclePosition.stop_id`).
+       * NOTE: This field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      @field:WireField(
+        tag = 1,
+        adapter = "com.squareup.wire.ProtoAdapter#STRING",
+        schemaIndex = 0,
+      )
+      @JvmField
+      public val assigned_stop_id: String? = null,
+      unknownFields: ByteString = ByteString.EMPTY,
+    ) : Message<StopTimeProperties, StopTimeProperties.Builder>(ADAPTER, unknownFields) {
+      override fun newBuilder(): Builder {
+        val builder = Builder()
+        builder.assigned_stop_id = assigned_stop_id
+        builder.addUnknownFields(unknownFields)
+        return builder
+      }
+
+      override fun equals(other: Any?): Boolean {
+        if (other === this) return true
+        if (other !is StopTimeProperties) return false
+        if (unknownFields != other.unknownFields) return false
+        if (assigned_stop_id != other.assigned_stop_id) return false
+        return true
+      }
+
+      override fun hashCode(): Int {
+        var result = super.hashCode
+        if (result == 0) {
+          result = unknownFields.hashCode()
+          result = result * 37 + (assigned_stop_id?.hashCode() ?: 0)
+          super.hashCode = result
+        }
+        return result
+      }
+
+      override fun toString(): String {
+        val result = mutableListOf<String>()
+        if (assigned_stop_id != null) result += """assigned_stop_id=${sanitize(assigned_stop_id)}"""
+        return result.joinToString(prefix = "StopTimeProperties{", separator = ", ", postfix = "}")
+      }
+
+      public fun copy(assigned_stop_id: String? = this.assigned_stop_id, unknownFields: ByteString =
+          this.unknownFields): StopTimeProperties = StopTimeProperties(assigned_stop_id,
+          unknownFields)
+
+      public class Builder : Message.Builder<StopTimeProperties, Builder>() {
+        @JvmField
+        public var assigned_stop_id: String? = null
+
+        /**
+         * Supports real-time stop assignments. Refers to a stop_id defined in the GTFS stops.txt.
+         * The new assigned_stop_id should not result in a significantly different trip experience
+         * for the end user than
+         * the stop_id defined in GTFS stop_times.txt. In other words, the end user should not view
+         * this new stop_id as an
+         * "unusual change" if the new stop was presented within an app without any additional
+         * context.
+         * For example, this field is intended to be used for platform assignments by using a
+         * stop_id that belongs to the
+         * same station as the stop originally defined in GTFS stop_times.txt.
+         * To assign a stop without providing any real-time arrival or departure predictions,
+         * populate this field and set
+         * StopTimeUpdate.schedule_relationship = NO_DATA.
+         * If this field is populated, it is preferred to omit `StopTimeUpdate.stop_id` and use only
+         * `StopTimeUpdate.stop_sequence`. If
+         * `StopTimeProperties.assigned_stop_id` and `StopTimeUpdate.stop_id` are populated,
+         * `StopTimeUpdate.stop_id` must match `assigned_stop_id`.
+         * Platform assignments should be reflected in other GTFS-realtime fields as well
+         * (e.g., `VehiclePosition.stop_id`).
+         * NOTE: This field is still experimental, and subject to change. It may be formally adopted
+         * in the future.
+         */
+        public fun assigned_stop_id(assigned_stop_id: String?): Builder {
+          this.assigned_stop_id = assigned_stop_id
+          return this
+        }
+
+        override fun build(): StopTimeProperties = StopTimeProperties(
+          assigned_stop_id = assigned_stop_id,
+          unknownFields = buildUnknownFields()
+        )
+      }
 
       public companion object {
         @JvmField
-        public val ADAPTER: ProtoAdapter<OccupancyStatus> = object : EnumAdapter<OccupancyStatus>(
-          OccupancyStatus::class, 
+        public val ADAPTER: ProtoAdapter<StopTimeProperties> = object :
+            ProtoAdapter<StopTimeProperties>(
+          FieldEncoding.LENGTH_DELIMITED, 
+          StopTimeProperties::class, 
+          "type.googleapis.com/transit_realtime.TripUpdate.StopTimeUpdate.StopTimeProperties", 
           PROTO_2, 
-          OccupancyStatus.EMPTY
+          null, 
+          "xyz/ksharma/transport/gtfs_realtime.proto"
         ) {
-          override fun fromValue(`value`: Int): OccupancyStatus? =
-              OccupancyStatus.fromValue(`value`)
+          override fun encodedSize(`value`: StopTimeProperties): Int {
+            var size = value.unknownFields.size
+            size += ProtoAdapter.STRING.encodedSizeWithTag(1, value.assigned_stop_id)
+            return size
+          }
+
+          override fun encode(writer: ProtoWriter, `value`: StopTimeProperties) {
+            ProtoAdapter.STRING.encodeWithTag(writer, 1, value.assigned_stop_id)
+            writer.writeBytes(value.unknownFields)
+          }
+
+          override fun encode(writer: ReverseProtoWriter, `value`: StopTimeProperties) {
+            writer.writeBytes(value.unknownFields)
+            ProtoAdapter.STRING.encodeWithTag(writer, 1, value.assigned_stop_id)
+          }
+
+          override fun decode(reader: ProtoReader): StopTimeProperties {
+            var assigned_stop_id: String? = null
+            val unknownFields = reader.forEachTag { tag ->
+              when (tag) {
+                1 -> assigned_stop_id = ProtoAdapter.STRING.decode(reader)
+                else -> reader.readUnknownField(tag)
+              }
+            }
+            return StopTimeProperties(
+              assigned_stop_id = assigned_stop_id,
+              unknownFields = unknownFields
+            )
+          }
+
+          override fun redact(`value`: StopTimeProperties): StopTimeProperties = value.copy(
+            unknownFields = ByteString.EMPTY
+          )
         }
 
-        @JvmStatic
-        public fun fromValue(`value`: Int): OccupancyStatus? = when (`value`) {
-          0 -> EMPTY
-          1 -> MANY_SEATS_AVAILABLE
-          2 -> FEW_SEATS_AVAILABLE
-          3 -> STANDING_ROOM_ONLY
-          4 -> CRUSHED_STANDING_ROOM_ONLY
-          5 -> FULL
-          6 -> NOT_ACCEPTING_PASSENGERS
-          else -> null
-        }
+        private const val serialVersionUID: Long = 0L
+
+        @JvmSynthetic
+        public inline fun build(body: Builder.() -> Unit): StopTimeProperties =
+            Builder().apply(body).build()
       }
+    }
+  }
+
+  /**
+   * Defines updated properties of the trip, such as a new shape_id when there is a detour. Or
+   * defines the
+   * trip_id, start_date, and start_time of a DUPLICATED trip.
+   * NOTE: This message is still experimental, and subject to change. It may be formally adopted in
+   * the future.
+   */
+  public class TripProperties(
+    /**
+     * Defines the identifier of a new trip that is a duplicate of an existing trip defined in (CSV)
+     * GTFS trips.txt
+     * but will start at a different service date and/or time (defined using the
+     * TripProperties.start_date and
+     * TripProperties.start_time fields). See definition of trips.trip_id in (CSV) GTFS. Its value
+     * must be different
+     * than the ones used in the (CSV) GTFS. Required if schedule_relationship=DUPLICATED, otherwise
+     * this field must not
+     * be populated and will be ignored by consumers.
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
+     */
+    @field:WireField(
+      tag = 1,
+      adapter = "com.squareup.wire.ProtoAdapter#STRING",
+      schemaIndex = 0,
+    )
+    @JvmField
+    public val trip_id: String? = null,
+    /**
+     * Service date on which the DUPLICATED trip will be run, in YYYYMMDD format. Required if
+     * schedule_relationship=DUPLICATED, otherwise this field must not be populated and will be
+     * ignored by consumers.
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
+     */
+    @field:WireField(
+      tag = 2,
+      adapter = "com.squareup.wire.ProtoAdapter#STRING",
+      schemaIndex = 1,
+    )
+    @JvmField
+    public val start_date: String? = null,
+    /**
+     * Defines the departure start time of the trip when it’s duplicated. See definition of
+     * stop_times.departure_time
+     * in (CSV) GTFS. Scheduled arrival and departure times for the duplicated trip are calculated
+     * based on the offset
+     * between the original trip departure_time and this field. For example, if a GTFS trip has stop
+     * A with a
+     * departure_time of 10:00:00 and stop B with departure_time of 10:01:00, and this field is
+     * populated with the value
+     * of 10:30:00, stop B on the duplicated trip will have a scheduled departure_time of 10:31:00.
+     * Real-time prediction
+     * delay values are applied to this calculated schedule time to determine the predicted time.
+     * For example, if a
+     * departure delay of 30 is provided for stop B, then the predicted departure time is 10:31:30.
+     * Real-time
+     * prediction time values do not have any offset applied to them and indicate the predicted time
+     * as provided.
+     * For example, if a departure time representing 10:31:30 is provided for stop B, then the
+     * predicted departure time
+     * is 10:31:30. This field is required if schedule_relationship is DUPLICATED, otherwise this
+     * field must not be
+     * populated and will be ignored by consumers.
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
+     */
+    @field:WireField(
+      tag = 3,
+      adapter = "com.squareup.wire.ProtoAdapter#STRING",
+      schemaIndex = 2,
+    )
+    @JvmField
+    public val start_time: String? = null,
+    /**
+     * Specifies the shape of the vehicle travel path when the trip shape differs from the shape
+     * specified in
+     * (CSV) GTFS or to specify it in real-time when it's not provided by (CSV) GTFS, such as a
+     * vehicle that takes differing
+     * paths based on rider demand. See definition of trips.shape_id in (CSV) GTFS. If a shape is
+     * neither defined in (CSV) GTFS
+     * nor in real-time, the shape is considered unknown. This field can refer to a shape defined in
+     * the (CSV) GTFS in shapes.txt
+     * or a Shape in the (protobuf) real-time feed. The order of stops (stop sequences) for this
+     * trip must remain the same as
+     * (CSV) GTFS. Stops that are a part of the original trip but will no longer be made, such as
+     * when a detour occurs, should
+     * be marked as schedule_relationship=SKIPPED.
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
+     */
+    @field:WireField(
+      tag = 4,
+      adapter = "com.squareup.wire.ProtoAdapter#STRING",
+      schemaIndex = 3,
+    )
+    @JvmField
+    public val shape_id: String? = null,
+    unknownFields: ByteString = ByteString.EMPTY,
+  ) : Message<TripProperties, TripProperties.Builder>(ADAPTER, unknownFields) {
+    override fun newBuilder(): Builder {
+      val builder = Builder()
+      builder.trip_id = trip_id
+      builder.start_date = start_date
+      builder.start_time = start_time
+      builder.shape_id = shape_id
+      builder.addUnknownFields(unknownFields)
+      return builder
+    }
+
+    override fun equals(other: Any?): Boolean {
+      if (other === this) return true
+      if (other !is TripProperties) return false
+      if (unknownFields != other.unknownFields) return false
+      if (trip_id != other.trip_id) return false
+      if (start_date != other.start_date) return false
+      if (start_time != other.start_time) return false
+      if (shape_id != other.shape_id) return false
+      return true
+    }
+
+    override fun hashCode(): Int {
+      var result = super.hashCode
+      if (result == 0) {
+        result = unknownFields.hashCode()
+        result = result * 37 + (trip_id?.hashCode() ?: 0)
+        result = result * 37 + (start_date?.hashCode() ?: 0)
+        result = result * 37 + (start_time?.hashCode() ?: 0)
+        result = result * 37 + (shape_id?.hashCode() ?: 0)
+        super.hashCode = result
+      }
+      return result
+    }
+
+    override fun toString(): String {
+      val result = mutableListOf<String>()
+      if (trip_id != null) result += """trip_id=${sanitize(trip_id)}"""
+      if (start_date != null) result += """start_date=${sanitize(start_date)}"""
+      if (start_time != null) result += """start_time=${sanitize(start_time)}"""
+      if (shape_id != null) result += """shape_id=${sanitize(shape_id)}"""
+      return result.joinToString(prefix = "TripProperties{", separator = ", ", postfix = "}")
+    }
+
+    public fun copy(
+      trip_id: String? = this.trip_id,
+      start_date: String? = this.start_date,
+      start_time: String? = this.start_time,
+      shape_id: String? = this.shape_id,
+      unknownFields: ByteString = this.unknownFields,
+    ): TripProperties = TripProperties(trip_id, start_date, start_time, shape_id, unknownFields)
+
+    public class Builder : Message.Builder<TripProperties, Builder>() {
+      @JvmField
+      public var trip_id: String? = null
+
+      @JvmField
+      public var start_date: String? = null
+
+      @JvmField
+      public var start_time: String? = null
+
+      @JvmField
+      public var shape_id: String? = null
+
+      /**
+       * Defines the identifier of a new trip that is a duplicate of an existing trip defined in
+       * (CSV) GTFS trips.txt
+       * but will start at a different service date and/or time (defined using the
+       * TripProperties.start_date and
+       * TripProperties.start_time fields). See definition of trips.trip_id in (CSV) GTFS. Its value
+       * must be different
+       * than the ones used in the (CSV) GTFS. Required if schedule_relationship=DUPLICATED,
+       * otherwise this field must not
+       * be populated and will be ignored by consumers.
+       * NOTE: This field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      public fun trip_id(trip_id: String?): Builder {
+        this.trip_id = trip_id
+        return this
+      }
+
+      /**
+       * Service date on which the DUPLICATED trip will be run, in YYYYMMDD format. Required if
+       * schedule_relationship=DUPLICATED, otherwise this field must not be populated and will be
+       * ignored by consumers.
+       * NOTE: This field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      public fun start_date(start_date: String?): Builder {
+        this.start_date = start_date
+        return this
+      }
+
+      /**
+       * Defines the departure start time of the trip when it’s duplicated. See definition of
+       * stop_times.departure_time
+       * in (CSV) GTFS. Scheduled arrival and departure times for the duplicated trip are calculated
+       * based on the offset
+       * between the original trip departure_time and this field. For example, if a GTFS trip has
+       * stop A with a
+       * departure_time of 10:00:00 and stop B with departure_time of 10:01:00, and this field is
+       * populated with the value
+       * of 10:30:00, stop B on the duplicated trip will have a scheduled departure_time of
+       * 10:31:00. Real-time prediction
+       * delay values are applied to this calculated schedule time to determine the predicted time.
+       * For example, if a
+       * departure delay of 30 is provided for stop B, then the predicted departure time is
+       * 10:31:30. Real-time
+       * prediction time values do not have any offset applied to them and indicate the predicted
+       * time as provided.
+       * For example, if a departure time representing 10:31:30 is provided for stop B, then the
+       * predicted departure time
+       * is 10:31:30. This field is required if schedule_relationship is DUPLICATED, otherwise this
+       * field must not be
+       * populated and will be ignored by consumers.
+       * NOTE: This field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      public fun start_time(start_time: String?): Builder {
+        this.start_time = start_time
+        return this
+      }
+
+      /**
+       * Specifies the shape of the vehicle travel path when the trip shape differs from the shape
+       * specified in
+       * (CSV) GTFS or to specify it in real-time when it's not provided by (CSV) GTFS, such as a
+       * vehicle that takes differing
+       * paths based on rider demand. See definition of trips.shape_id in (CSV) GTFS. If a shape is
+       * neither defined in (CSV) GTFS
+       * nor in real-time, the shape is considered unknown. This field can refer to a shape defined
+       * in the (CSV) GTFS in shapes.txt
+       * or a Shape in the (protobuf) real-time feed. The order of stops (stop sequences) for this
+       * trip must remain the same as
+       * (CSV) GTFS. Stops that are a part of the original trip but will no longer be made, such as
+       * when a detour occurs, should
+       * be marked as schedule_relationship=SKIPPED.
+       * NOTE: This field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      public fun shape_id(shape_id: String?): Builder {
+        this.shape_id = shape_id
+        return this
+      }
+
+      override fun build(): TripProperties = TripProperties(
+        trip_id = trip_id,
+        start_date = start_date,
+        start_time = start_time,
+        shape_id = shape_id,
+        unknownFields = buildUnknownFields()
+      )
+    }
+
+    public companion object {
+      @JvmField
+      public val ADAPTER: ProtoAdapter<TripProperties> = object : ProtoAdapter<TripProperties>(
+        FieldEncoding.LENGTH_DELIMITED, 
+        TripProperties::class, 
+        "type.googleapis.com/transit_realtime.TripUpdate.TripProperties", 
+        PROTO_2, 
+        null, 
+        "xyz/ksharma/transport/gtfs_realtime.proto"
+      ) {
+        override fun encodedSize(`value`: TripProperties): Int {
+          var size = value.unknownFields.size
+          size += ProtoAdapter.STRING.encodedSizeWithTag(1, value.trip_id)
+          size += ProtoAdapter.STRING.encodedSizeWithTag(2, value.start_date)
+          size += ProtoAdapter.STRING.encodedSizeWithTag(3, value.start_time)
+          size += ProtoAdapter.STRING.encodedSizeWithTag(4, value.shape_id)
+          return size
+        }
+
+        override fun encode(writer: ProtoWriter, `value`: TripProperties) {
+          ProtoAdapter.STRING.encodeWithTag(writer, 1, value.trip_id)
+          ProtoAdapter.STRING.encodeWithTag(writer, 2, value.start_date)
+          ProtoAdapter.STRING.encodeWithTag(writer, 3, value.start_time)
+          ProtoAdapter.STRING.encodeWithTag(writer, 4, value.shape_id)
+          writer.writeBytes(value.unknownFields)
+        }
+
+        override fun encode(writer: ReverseProtoWriter, `value`: TripProperties) {
+          writer.writeBytes(value.unknownFields)
+          ProtoAdapter.STRING.encodeWithTag(writer, 4, value.shape_id)
+          ProtoAdapter.STRING.encodeWithTag(writer, 3, value.start_time)
+          ProtoAdapter.STRING.encodeWithTag(writer, 2, value.start_date)
+          ProtoAdapter.STRING.encodeWithTag(writer, 1, value.trip_id)
+        }
+
+        override fun decode(reader: ProtoReader): TripProperties {
+          var trip_id: String? = null
+          var start_date: String? = null
+          var start_time: String? = null
+          var shape_id: String? = null
+          val unknownFields = reader.forEachTag { tag ->
+            when (tag) {
+              1 -> trip_id = ProtoAdapter.STRING.decode(reader)
+              2 -> start_date = ProtoAdapter.STRING.decode(reader)
+              3 -> start_time = ProtoAdapter.STRING.decode(reader)
+              4 -> shape_id = ProtoAdapter.STRING.decode(reader)
+              else -> reader.readUnknownField(tag)
+            }
+          }
+          return TripProperties(
+            trip_id = trip_id,
+            start_date = start_date,
+            start_time = start_time,
+            shape_id = shape_id,
+            unknownFields = unknownFields
+          )
+        }
+
+        override fun redact(`value`: TripProperties): TripProperties = value.copy(
+          unknownFields = ByteString.EMPTY
+        )
+      }
+
+      private const val serialVersionUID: Long = 0L
+
+      @JvmSynthetic
+      public inline fun build(body: Builder.() -> Unit): TripProperties =
+          Builder().apply(body).build()
     }
   }
 }

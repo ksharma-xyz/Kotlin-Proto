@@ -30,6 +30,9 @@ import kotlin.Unit
 import kotlin.collections.List
 import okio.ByteString
 
+/**
+ * An alert, indicating some sort of incident in the public transit network.
+ */
 public class Alert(
   active_period: List<TimeRange> = emptyList(),
   informed_entity: List<EntitySelector> = emptyList(),
@@ -47,6 +50,9 @@ public class Alert(
   )
   @JvmField
   public val effect: Effect? = null,
+  /**
+   * The URL which provides additional information about the alert.
+   */
   @field:WireField(
     tag = 8,
     adapter = "xyz.ksharma.transit.realtime.TranslatedString#ADAPTER",
@@ -54,6 +60,9 @@ public class Alert(
   )
   @JvmField
   public val url: TranslatedString? = null,
+  /**
+   * Alert header. Contains a short summary of the alert text as plain-text.
+   */
   @field:WireField(
     tag = 10,
     adapter = "xyz.ksharma.transit.realtime.TranslatedString#ADAPTER",
@@ -61,6 +70,10 @@ public class Alert(
   )
   @JvmField
   public val header_text: TranslatedString? = null,
+  /**
+   * Full description for the alert as plain-text. The information in the
+   * description should add to the information of the header.
+   */
   @field:WireField(
     tag = 11,
     adapter = "xyz.ksharma.transit.realtime.TranslatedString#ADAPTER",
@@ -69,7 +82,8 @@ public class Alert(
   @JvmField
   public val description_text: TranslatedString? = null,
   /**
-   * NEW
+   * Text for alert header to be used in text-to-speech implementations. This field is the
+   * text-to-speech version of header_text.
    */
   @field:WireField(
     tag = 12,
@@ -79,7 +93,8 @@ public class Alert(
   @JvmField
   public val tts_header_text: TranslatedString? = null,
   /**
-   * NEW
+   * Text for full description for the alert to be used in text-to-speech implementations. This
+   * field is the text-to-speech version of description_text.
    */
   @field:WireField(
     tag = 13,
@@ -88,9 +103,6 @@ public class Alert(
   )
   @JvmField
   public val tts_description_text: TranslatedString? = null,
-  /**
-   * NEW
-   */
   @field:WireField(
     tag = 14,
     adapter = "xyz.ksharma.transit.realtime.Alert${'$'}SeverityLevel#ADAPTER",
@@ -98,8 +110,70 @@ public class Alert(
   )
   @JvmField
   public val severity_level: SeverityLevel? = null,
+  /**
+   * TranslatedImage to be displayed along the alert text. Used to explain visually the alert effect
+   * of a detour, station closure, etc. The image must enhance the understanding of the alert. Any
+   * essential information communicated within the image must also be contained in the alert text.
+   * The following types of images are discouraged : image containing mainly text, marketing or
+   * branded images that add no additional information.
+   * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+   * the future.
+   */
+  @field:WireField(
+    tag = 15,
+    adapter = "xyz.ksharma.transit.realtime.TranslatedImage#ADAPTER",
+    schemaIndex = 10,
+  )
+  @JvmField
+  public val image: TranslatedImage? = null,
+  /**
+   * Text describing the appearance of the linked image in the `image` field (e.g., in case the
+   * image can't be displayed
+   * or the user can't see the image for accessibility reasons). See the HTML spec for alt image
+   * text - https://html.spec.whatwg.org/#alt.
+   * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+   * the future.
+   */
+  @field:WireField(
+    tag = 16,
+    adapter = "xyz.ksharma.transit.realtime.TranslatedString#ADAPTER",
+    schemaIndex = 11,
+  )
+  @JvmField
+  public val image_alternative_text: TranslatedString? = null,
+  /**
+   * Description of the cause of the alert that allows for agency-specific language; more specific
+   * than the Cause. If cause_detail is included, then Cause must also be included.
+   * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+   * the future.
+   */
+  @field:WireField(
+    tag = 17,
+    adapter = "xyz.ksharma.transit.realtime.TranslatedString#ADAPTER",
+    schemaIndex = 12,
+  )
+  @JvmField
+  public val cause_detail: TranslatedString? = null,
+  /**
+   * Description of the effect of the alert that allows for agency-specific language; more specific
+   * than the Effect. If effect_detail is included, then Effect must also be included.
+   * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+   * the future.
+   */
+  @field:WireField(
+    tag = 18,
+    adapter = "xyz.ksharma.transit.realtime.TranslatedString#ADAPTER",
+    schemaIndex = 13,
+  )
+  @JvmField
+  public val effect_detail: TranslatedString? = null,
   unknownFields: ByteString = ByteString.EMPTY,
 ) : Message<Alert, Alert.Builder>(ADAPTER, unknownFields) {
+  /**
+   * Time when the alert should be shown to the user. If missing, the
+   * alert will be shown as long as it appears in the feed.
+   * If multiple ranges are given, the alert will be shown during all of them.
+   */
   @field:WireField(
     tag = 1,
     adapter = "xyz.ksharma.transit.realtime.TimeRange#ADAPTER",
@@ -109,6 +183,9 @@ public class Alert(
   @JvmField
   public val active_period: List<TimeRange> = immutableCopyOf("active_period", active_period)
 
+  /**
+   * Entities whose users we should notify of this alert.
+   */
   @field:WireField(
     tag = 5,
     adapter = "xyz.ksharma.transit.realtime.EntitySelector#ADAPTER",
@@ -131,6 +208,10 @@ public class Alert(
     builder.tts_header_text = tts_header_text
     builder.tts_description_text = tts_description_text
     builder.severity_level = severity_level
+    builder.image = image
+    builder.image_alternative_text = image_alternative_text
+    builder.cause_detail = cause_detail
+    builder.effect_detail = effect_detail
     builder.addUnknownFields(unknownFields)
     return builder
   }
@@ -149,6 +230,10 @@ public class Alert(
     if (tts_header_text != other.tts_header_text) return false
     if (tts_description_text != other.tts_description_text) return false
     if (severity_level != other.severity_level) return false
+    if (image != other.image) return false
+    if (image_alternative_text != other.image_alternative_text) return false
+    if (cause_detail != other.cause_detail) return false
+    if (effect_detail != other.effect_detail) return false
     return true
   }
 
@@ -166,6 +251,10 @@ public class Alert(
       result = result * 37 + (tts_header_text?.hashCode() ?: 0)
       result = result * 37 + (tts_description_text?.hashCode() ?: 0)
       result = result * 37 + (severity_level?.hashCode() ?: 0)
+      result = result * 37 + (image?.hashCode() ?: 0)
+      result = result * 37 + (image_alternative_text?.hashCode() ?: 0)
+      result = result * 37 + (cause_detail?.hashCode() ?: 0)
+      result = result * 37 + (effect_detail?.hashCode() ?: 0)
       super.hashCode = result
     }
     return result
@@ -183,6 +272,11 @@ public class Alert(
     if (tts_header_text != null) result += """tts_header_text=$tts_header_text"""
     if (tts_description_text != null) result += """tts_description_text=$tts_description_text"""
     if (severity_level != null) result += """severity_level=$severity_level"""
+    if (image != null) result += """image=$image"""
+    if (image_alternative_text != null) result +=
+        """image_alternative_text=$image_alternative_text"""
+    if (cause_detail != null) result += """cause_detail=$cause_detail"""
+    if (effect_detail != null) result += """effect_detail=$effect_detail"""
     return result.joinToString(prefix = "Alert{", separator = ", ", postfix = "}")
   }
 
@@ -197,9 +291,14 @@ public class Alert(
     tts_header_text: TranslatedString? = this.tts_header_text,
     tts_description_text: TranslatedString? = this.tts_description_text,
     severity_level: SeverityLevel? = this.severity_level,
+    image: TranslatedImage? = this.image,
+    image_alternative_text: TranslatedString? = this.image_alternative_text,
+    cause_detail: TranslatedString? = this.cause_detail,
+    effect_detail: TranslatedString? = this.effect_detail,
     unknownFields: ByteString = this.unknownFields,
   ): Alert = Alert(active_period, informed_entity, cause, effect, url, header_text,
-      description_text, tts_header_text, tts_description_text, severity_level, unknownFields)
+      description_text, tts_header_text, tts_description_text, severity_level, image,
+      image_alternative_text, cause_detail, effect_detail, unknownFields)
 
   public class Builder : Message.Builder<Alert, Builder>() {
     @JvmField
@@ -232,12 +331,32 @@ public class Alert(
     @JvmField
     public var severity_level: SeverityLevel? = null
 
+    @JvmField
+    public var image: TranslatedImage? = null
+
+    @JvmField
+    public var image_alternative_text: TranslatedString? = null
+
+    @JvmField
+    public var cause_detail: TranslatedString? = null
+
+    @JvmField
+    public var effect_detail: TranslatedString? = null
+
+    /**
+     * Time when the alert should be shown to the user. If missing, the
+     * alert will be shown as long as it appears in the feed.
+     * If multiple ranges are given, the alert will be shown during all of them.
+     */
     public fun active_period(active_period: List<TimeRange>): Builder {
       checkElementsNotNull(active_period)
       this.active_period = active_period
       return this
     }
 
+    /**
+     * Entities whose users we should notify of this alert.
+     */
     public fun informed_entity(informed_entity: List<EntitySelector>): Builder {
       checkElementsNotNull(informed_entity)
       this.informed_entity = informed_entity
@@ -254,23 +373,34 @@ public class Alert(
       return this
     }
 
+    /**
+     * The URL which provides additional information about the alert.
+     */
     public fun url(url: TranslatedString?): Builder {
       this.url = url
       return this
     }
 
+    /**
+     * Alert header. Contains a short summary of the alert text as plain-text.
+     */
     public fun header_text(header_text: TranslatedString?): Builder {
       this.header_text = header_text
       return this
     }
 
+    /**
+     * Full description for the alert as plain-text. The information in the
+     * description should add to the information of the header.
+     */
     public fun description_text(description_text: TranslatedString?): Builder {
       this.description_text = description_text
       return this
     }
 
     /**
-     * NEW
+     * Text for alert header to be used in text-to-speech implementations. This field is the
+     * text-to-speech version of header_text.
      */
     public fun tts_header_text(tts_header_text: TranslatedString?): Builder {
       this.tts_header_text = tts_header_text
@@ -278,18 +408,66 @@ public class Alert(
     }
 
     /**
-     * NEW
+     * Text for full description for the alert to be used in text-to-speech implementations. This
+     * field is the text-to-speech version of description_text.
      */
     public fun tts_description_text(tts_description_text: TranslatedString?): Builder {
       this.tts_description_text = tts_description_text
       return this
     }
 
-    /**
-     * NEW
-     */
     public fun severity_level(severity_level: SeverityLevel?): Builder {
       this.severity_level = severity_level
+      return this
+    }
+
+    /**
+     * TranslatedImage to be displayed along the alert text. Used to explain visually the alert
+     * effect of a detour, station closure, etc. The image must enhance the understanding of the alert.
+     * Any essential information communicated within the image must also be contained in the alert
+     * text.
+     * The following types of images are discouraged : image containing mainly text, marketing or
+     * branded images that add no additional information.
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
+     */
+    public fun image(image: TranslatedImage?): Builder {
+      this.image = image
+      return this
+    }
+
+    /**
+     * Text describing the appearance of the linked image in the `image` field (e.g., in case the
+     * image can't be displayed
+     * or the user can't see the image for accessibility reasons). See the HTML spec for alt image
+     * text - https://html.spec.whatwg.org/#alt.
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
+     */
+    public fun image_alternative_text(image_alternative_text: TranslatedString?): Builder {
+      this.image_alternative_text = image_alternative_text
+      return this
+    }
+
+    /**
+     * Description of the cause of the alert that allows for agency-specific language; more specific
+     * than the Cause. If cause_detail is included, then Cause must also be included.
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
+     */
+    public fun cause_detail(cause_detail: TranslatedString?): Builder {
+      this.cause_detail = cause_detail
+      return this
+    }
+
+    /**
+     * Description of the effect of the alert that allows for agency-specific language; more
+     * specific than the Effect. If effect_detail is included, then Effect must also be included.
+     * NOTE: This field is still experimental, and subject to change. It may be formally adopted in
+     * the future.
+     */
+    public fun effect_detail(effect_detail: TranslatedString?): Builder {
+      this.effect_detail = effect_detail
       return this
     }
 
@@ -304,6 +482,10 @@ public class Alert(
       tts_header_text = tts_header_text,
       tts_description_text = tts_description_text,
       severity_level = severity_level,
+      image = image,
+      image_alternative_text = image_alternative_text,
+      cause_detail = cause_detail,
+      effect_detail = effect_detail,
       unknownFields = buildUnknownFields()
     )
   }
@@ -314,6 +496,9 @@ public class Alert(
 
     @JvmField
     public val DEFAULT_EFFECT: Effect = Effect.UNKNOWN_EFFECT
+
+    @JvmField
+    public val DEFAULT_SEVERITY_LEVEL: SeverityLevel = SeverityLevel.UNKNOWN_SEVERITY
 
     @JvmField
     public val ADAPTER: ProtoAdapter<Alert> = object : ProtoAdapter<Alert>(
@@ -336,6 +521,10 @@ public class Alert(
         size += TranslatedString.ADAPTER.encodedSizeWithTag(12, value.tts_header_text)
         size += TranslatedString.ADAPTER.encodedSizeWithTag(13, value.tts_description_text)
         size += SeverityLevel.ADAPTER.encodedSizeWithTag(14, value.severity_level)
+        size += TranslatedImage.ADAPTER.encodedSizeWithTag(15, value.image)
+        size += TranslatedString.ADAPTER.encodedSizeWithTag(16, value.image_alternative_text)
+        size += TranslatedString.ADAPTER.encodedSizeWithTag(17, value.cause_detail)
+        size += TranslatedString.ADAPTER.encodedSizeWithTag(18, value.effect_detail)
         return size
       }
 
@@ -350,11 +539,19 @@ public class Alert(
         TranslatedString.ADAPTER.encodeWithTag(writer, 12, value.tts_header_text)
         TranslatedString.ADAPTER.encodeWithTag(writer, 13, value.tts_description_text)
         SeverityLevel.ADAPTER.encodeWithTag(writer, 14, value.severity_level)
+        TranslatedImage.ADAPTER.encodeWithTag(writer, 15, value.image)
+        TranslatedString.ADAPTER.encodeWithTag(writer, 16, value.image_alternative_text)
+        TranslatedString.ADAPTER.encodeWithTag(writer, 17, value.cause_detail)
+        TranslatedString.ADAPTER.encodeWithTag(writer, 18, value.effect_detail)
         writer.writeBytes(value.unknownFields)
       }
 
       override fun encode(writer: ReverseProtoWriter, `value`: Alert) {
         writer.writeBytes(value.unknownFields)
+        TranslatedString.ADAPTER.encodeWithTag(writer, 18, value.effect_detail)
+        TranslatedString.ADAPTER.encodeWithTag(writer, 17, value.cause_detail)
+        TranslatedString.ADAPTER.encodeWithTag(writer, 16, value.image_alternative_text)
+        TranslatedImage.ADAPTER.encodeWithTag(writer, 15, value.image)
         SeverityLevel.ADAPTER.encodeWithTag(writer, 14, value.severity_level)
         TranslatedString.ADAPTER.encodeWithTag(writer, 13, value.tts_description_text)
         TranslatedString.ADAPTER.encodeWithTag(writer, 12, value.tts_header_text)
@@ -378,6 +575,10 @@ public class Alert(
         var tts_header_text: TranslatedString? = null
         var tts_description_text: TranslatedString? = null
         var severity_level: SeverityLevel? = null
+        var image: TranslatedImage? = null
+        var image_alternative_text: TranslatedString? = null
+        var cause_detail: TranslatedString? = null
+        var effect_detail: TranslatedString? = null
         val unknownFields = reader.forEachTag { tag ->
           when (tag) {
             1 -> active_period.add(TimeRange.ADAPTER.decode(reader))
@@ -402,6 +603,10 @@ public class Alert(
             } catch (e: ProtoAdapter.EnumConstantNotFoundException) {
               reader.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
             }
+            15 -> image = TranslatedImage.ADAPTER.decode(reader)
+            16 -> image_alternative_text = TranslatedString.ADAPTER.decode(reader)
+            17 -> cause_detail = TranslatedString.ADAPTER.decode(reader)
+            18 -> effect_detail = TranslatedString.ADAPTER.decode(reader)
             else -> reader.readUnknownField(tag)
           }
         }
@@ -416,6 +621,10 @@ public class Alert(
           tts_header_text = tts_header_text,
           tts_description_text = tts_description_text,
           severity_level = severity_level,
+          image = image,
+          image_alternative_text = image_alternative_text,
+          cause_detail = cause_detail,
+          effect_detail = effect_detail,
           unknownFields = unknownFields
         )
       }
@@ -428,6 +637,11 @@ public class Alert(
         description_text = value.description_text?.let(TranslatedString.ADAPTER::redact),
         tts_header_text = value.tts_header_text?.let(TranslatedString.ADAPTER::redact),
         tts_description_text = value.tts_description_text?.let(TranslatedString.ADAPTER::redact),
+        image = value.image?.let(TranslatedImage.ADAPTER::redact),
+        image_alternative_text =
+            value.image_alternative_text?.let(TranslatedString.ADAPTER::redact),
+        cause_detail = value.cause_detail?.let(TranslatedString.ADAPTER::redact),
+        effect_detail = value.effect_detail?.let(TranslatedString.ADAPTER::redact),
         unknownFields = ByteString.EMPTY
       )
     }
@@ -438,21 +652,24 @@ public class Alert(
     public inline fun build(body: Builder.() -> Unit): Alert = Builder().apply(body).build()
   }
 
+  /**
+   * Cause of this alert. If cause_detail is included, then Cause must also be included.
+   */
   public enum class Cause(
     override val `value`: Int,
   ) : WireEnum {
     UNKNOWN_CAUSE(1),
     /**
-     * NEW
+     * Not machine-representable.
      */
     OTHER_CAUSE(2),
     TECHNICAL_PROBLEM(3),
     /**
-     * NEW
+     * Public transit agency employees stopped working.
      */
     STRIKE(4),
     /**
-     * NEW
+     * People are blocking the streets.
      */
     DEMONSTRATION(5),
     ACCIDENT(6),
@@ -493,11 +710,20 @@ public class Alert(
     }
   }
 
+  /**
+   * What is the effect of this problem on the affected entity. If effect_detail is included, then
+   * Effect must also be included.
+   */
   public enum class Effect(
     override val `value`: Int,
   ) : WireEnum {
     NO_SERVICE(1),
     REDUCED_SERVICE(2),
+    /**
+     * We don't care about INsignificant delays: they are hard to detect, have
+     * little impact on the user, and would clutter the results as they are too
+     * frequent.
+     */
     SIGNIFICANT_DELAYS(3),
     DETOUR(4),
     ADDITIONAL_SERVICE(5),
@@ -505,13 +731,7 @@ public class Alert(
     OTHER_EFFECT(7),
     UNKNOWN_EFFECT(8),
     STOP_MOVED(9),
-    /**
-     * NEW
-     */
     NO_EFFECT(10),
-    /**
-     * NEW
-     */
     ACCESSIBILITY_ISSUE(11),
     ;
 
@@ -543,12 +763,12 @@ public class Alert(
     }
   }
 
+  /**
+   * Severity of this alert.
+   */
   public enum class SeverityLevel(
     override val `value`: Int,
   ) : WireEnum {
-    /**
-     * NEW
-     */
     UNKNOWN_SEVERITY(1),
     INFO(2),
     WARNING(3),

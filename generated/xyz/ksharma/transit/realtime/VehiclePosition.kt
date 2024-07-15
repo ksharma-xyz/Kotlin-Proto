@@ -31,7 +31,15 @@ import kotlin.Unit
 import kotlin.collections.List
 import okio.ByteString
 
+/**
+ * Realtime positioning information for a given vehicle.
+ */
 public class VehiclePosition(
+  /**
+   * The Trip that this vehicle is serving.
+   * Can be empty or partial if the vehicle can not be identified with a given
+   * trip instance.
+   */
   @field:WireField(
     tag = 1,
     adapter = "xyz.ksharma.transit.realtime.TripDescriptor#ADAPTER",
@@ -39,6 +47,9 @@ public class VehiclePosition(
   )
   @JvmField
   public val trip: TripDescriptor? = null,
+  /**
+   * Additional information on the vehicle that is serving this trip.
+   */
   @field:WireField(
     tag = 8,
     adapter = "xyz.ksharma.transit.realtime.VehicleDescriptor#ADAPTER",
@@ -46,6 +57,9 @@ public class VehiclePosition(
   )
   @JvmField
   public val vehicle: VehicleDescriptor? = null,
+  /**
+   * Current position of this vehicle.
+   */
   @field:WireField(
     tag = 2,
     adapter = "xyz.ksharma.transit.realtime.Position#ADAPTER",
@@ -53,6 +67,12 @@ public class VehiclePosition(
   )
   @JvmField
   public val position: Position? = null,
+  /**
+   * The stop sequence index of the current stop. The meaning of
+   * current_stop_sequence (i.e., the stop that it refers to) is determined by
+   * current_status.
+   * If current_status is missing IN_TRANSIT_TO is assumed.
+   */
   @field:WireField(
     tag = 3,
     adapter = "com.squareup.wire.ProtoAdapter#UINT32",
@@ -60,6 +80,10 @@ public class VehiclePosition(
   )
   @JvmField
   public val current_stop_sequence: Int? = null,
+  /**
+   * Identifies the current stop. The value must be the same as in stops.txt in
+   * the corresponding GTFS feed.
+   */
   @field:WireField(
     tag = 7,
     adapter = "com.squareup.wire.ProtoAdapter#STRING",
@@ -67,6 +91,10 @@ public class VehiclePosition(
   )
   @JvmField
   public val stop_id: String? = null,
+  /**
+   * The exact status of the vehicle with respect to the current stop.
+   * Ignored if current_stop_sequence is missing.
+   */
   @field:WireField(
     tag = 4,
     adapter = "xyz.ksharma.transit.realtime.VehiclePosition${'$'}VehicleStopStatus#ADAPTER",
@@ -74,6 +102,10 @@ public class VehiclePosition(
   )
   @JvmField
   public val current_status: VehicleStopStatus? = null,
+  /**
+   * Moment at which the vehicle's position was measured. In POSIX time
+   * (i.e., number of seconds since January 1st 1970 00:00:00 UTC).
+   */
   @field:WireField(
     tag = 5,
     adapter = "com.squareup.wire.ProtoAdapter#UINT64",
@@ -88,6 +120,11 @@ public class VehiclePosition(
   )
   @JvmField
   public val congestion_level: CongestionLevel? = null,
+  /**
+   * If multi_carriage_status is populated with per-carriage OccupancyStatus,
+   * then this field should describe the entire vehicle with all carriages accepting passengers
+   * considered.
+   */
   @field:WireField(
     tag = 9,
     adapter = "xyz.ksharma.transit.realtime.VehiclePosition${'$'}OccupancyStatus#ADAPTER",
@@ -95,20 +132,51 @@ public class VehiclePosition(
   )
   @JvmField
   public val occupancy_status: OccupancyStatus? = null,
-  consist: List<CarriageDescriptor> = emptyList(),
-  unknownFields: ByteString = ByteString.EMPTY,
-) : Message<VehiclePosition, VehiclePosition.Builder>(ADAPTER, unknownFields) {
   /**
-   * Extension source: xyz/ksharma/transport/gtfs_realtime.proto
+   * A percentage value indicating the degree of passenger occupancy in the vehicle.
+   * The values are represented as an integer without decimals. 0 means 0% and 100 means 100%.
+   * The value 100 should represent the total maximum occupancy the vehicle was designed for,
+   * including both seated and standing capacity, and current operating regulations allow.
+   * The value may exceed 100 if there are more passengers than the maximum designed capacity.
+   * The precision of occupancy_percentage should be low enough that individual passengers cannot be
+   * tracked boarding or alighting the vehicle.
+   * If multi_carriage_status is populated with per-carriage occupancy_percentage,
+   * then this field should describe the entire vehicle with all carriages accepting passengers
+   * considered.
+   * This field is still experimental, and subject to change. It may be formally adopted in the
+   * future.
    */
   @field:WireField(
-    tag = 1_007,
-    adapter = "xyz.ksharma.transit.realtime.CarriageDescriptor#ADAPTER",
-    label = WireField.Label.REPEATED,
+    tag = 10,
+    adapter = "com.squareup.wire.ProtoAdapter#UINT32",
     schemaIndex = 9,
   )
   @JvmField
-  public val consist: List<CarriageDescriptor> = immutableCopyOf("consist", consist)
+  public val occupancy_percentage: Int? = null,
+  multi_carriage_details: List<CarriageDetails> = emptyList(),
+  unknownFields: ByteString = ByteString.EMPTY,
+) : Message<VehiclePosition, VehiclePosition.Builder>(ADAPTER, unknownFields) {
+  /**
+   * Details of the multiple carriages of this given vehicle.
+   * The first occurrence represents the first carriage of the vehicle,
+   * given the current direction of travel.
+   * The number of occurrences of the multi_carriage_details
+   * field represents the number of carriages of the vehicle.
+   * It also includes non boardable carriages,
+   * like engines, maintenance carriages, etc… as they provide valuable
+   * information to passengers about where to stand on a platform.
+   * This message/field is still experimental, and subject to change. It may be formally adopted in
+   * the future.
+   */
+  @field:WireField(
+    tag = 11,
+    adapter = "xyz.ksharma.transit.realtime.VehiclePosition${'$'}CarriageDetails#ADAPTER",
+    label = WireField.Label.REPEATED,
+    schemaIndex = 10,
+  )
+  @JvmField
+  public val multi_carriage_details: List<CarriageDetails> =
+      immutableCopyOf("multi_carriage_details", multi_carriage_details)
 
   override fun newBuilder(): Builder {
     val builder = Builder()
@@ -121,7 +189,8 @@ public class VehiclePosition(
     builder.timestamp = timestamp
     builder.congestion_level = congestion_level
     builder.occupancy_status = occupancy_status
-    builder.consist = consist
+    builder.occupancy_percentage = occupancy_percentage
+    builder.multi_carriage_details = multi_carriage_details
     builder.addUnknownFields(unknownFields)
     return builder
   }
@@ -139,7 +208,8 @@ public class VehiclePosition(
     if (timestamp != other.timestamp) return false
     if (congestion_level != other.congestion_level) return false
     if (occupancy_status != other.occupancy_status) return false
-    if (consist != other.consist) return false
+    if (occupancy_percentage != other.occupancy_percentage) return false
+    if (multi_carriage_details != other.multi_carriage_details) return false
     return true
   }
 
@@ -156,7 +226,8 @@ public class VehiclePosition(
       result = result * 37 + (timestamp?.hashCode() ?: 0)
       result = result * 37 + (congestion_level?.hashCode() ?: 0)
       result = result * 37 + (occupancy_status?.hashCode() ?: 0)
-      result = result * 37 + consist.hashCode()
+      result = result * 37 + (occupancy_percentage?.hashCode() ?: 0)
+      result = result * 37 + multi_carriage_details.hashCode()
       super.hashCode = result
     }
     return result
@@ -173,7 +244,9 @@ public class VehiclePosition(
     if (timestamp != null) result += """timestamp=$timestamp"""
     if (congestion_level != null) result += """congestion_level=$congestion_level"""
     if (occupancy_status != null) result += """occupancy_status=$occupancy_status"""
-    if (consist.isNotEmpty()) result += """consist=$consist"""
+    if (occupancy_percentage != null) result += """occupancy_percentage=$occupancy_percentage"""
+    if (multi_carriage_details.isNotEmpty()) result +=
+        """multi_carriage_details=$multi_carriage_details"""
     return result.joinToString(prefix = "VehiclePosition{", separator = ", ", postfix = "}")
   }
 
@@ -187,10 +260,12 @@ public class VehiclePosition(
     timestamp: Long? = this.timestamp,
     congestion_level: CongestionLevel? = this.congestion_level,
     occupancy_status: OccupancyStatus? = this.occupancy_status,
-    consist: List<CarriageDescriptor> = this.consist,
+    occupancy_percentage: Int? = this.occupancy_percentage,
+    multi_carriage_details: List<CarriageDetails> = this.multi_carriage_details,
     unknownFields: ByteString = this.unknownFields,
   ): VehiclePosition = VehiclePosition(trip, vehicle, position, current_stop_sequence, stop_id,
-      current_status, timestamp, congestion_level, occupancy_status, consist, unknownFields)
+      current_status, timestamp, congestion_level, occupancy_status, occupancy_percentage,
+      multi_carriage_details, unknownFields)
 
   public class Builder : Message.Builder<VehiclePosition, Builder>() {
     @JvmField
@@ -221,38 +296,70 @@ public class VehiclePosition(
     public var occupancy_status: OccupancyStatus? = null
 
     @JvmField
-    public var consist: List<CarriageDescriptor> = emptyList()
+    public var occupancy_percentage: Int? = null
 
+    @JvmField
+    public var multi_carriage_details: List<CarriageDetails> = emptyList()
+
+    /**
+     * The Trip that this vehicle is serving.
+     * Can be empty or partial if the vehicle can not be identified with a given
+     * trip instance.
+     */
     public fun trip(trip: TripDescriptor?): Builder {
       this.trip = trip
       return this
     }
 
+    /**
+     * Additional information on the vehicle that is serving this trip.
+     */
     public fun vehicle(vehicle: VehicleDescriptor?): Builder {
       this.vehicle = vehicle
       return this
     }
 
+    /**
+     * Current position of this vehicle.
+     */
     public fun position(position: Position?): Builder {
       this.position = position
       return this
     }
 
+    /**
+     * The stop sequence index of the current stop. The meaning of
+     * current_stop_sequence (i.e., the stop that it refers to) is determined by
+     * current_status.
+     * If current_status is missing IN_TRANSIT_TO is assumed.
+     */
     public fun current_stop_sequence(current_stop_sequence: Int?): Builder {
       this.current_stop_sequence = current_stop_sequence
       return this
     }
 
+    /**
+     * Identifies the current stop. The value must be the same as in stops.txt in
+     * the corresponding GTFS feed.
+     */
     public fun stop_id(stop_id: String?): Builder {
       this.stop_id = stop_id
       return this
     }
 
+    /**
+     * The exact status of the vehicle with respect to the current stop.
+     * Ignored if current_stop_sequence is missing.
+     */
     public fun current_status(current_status: VehicleStopStatus?): Builder {
       this.current_status = current_status
       return this
     }
 
+    /**
+     * Moment at which the vehicle's position was measured. In POSIX time
+     * (i.e., number of seconds since January 1st 1970 00:00:00 UTC).
+     */
     public fun timestamp(timestamp: Long?): Builder {
       this.timestamp = timestamp
       return this
@@ -263,14 +370,50 @@ public class VehiclePosition(
       return this
     }
 
+    /**
+     * If multi_carriage_status is populated with per-carriage OccupancyStatus,
+     * then this field should describe the entire vehicle with all carriages accepting passengers
+     * considered.
+     */
     public fun occupancy_status(occupancy_status: OccupancyStatus?): Builder {
       this.occupancy_status = occupancy_status
       return this
     }
 
-    public fun consist(consist: List<CarriageDescriptor>): Builder {
-      checkElementsNotNull(consist)
-      this.consist = consist
+    /**
+     * A percentage value indicating the degree of passenger occupancy in the vehicle.
+     * The values are represented as an integer without decimals. 0 means 0% and 100 means 100%.
+     * The value 100 should represent the total maximum occupancy the vehicle was designed for,
+     * including both seated and standing capacity, and current operating regulations allow.
+     * The value may exceed 100 if there are more passengers than the maximum designed capacity.
+     * The precision of occupancy_percentage should be low enough that individual passengers cannot
+     * be tracked boarding or alighting the vehicle.
+     * If multi_carriage_status is populated with per-carriage occupancy_percentage,
+     * then this field should describe the entire vehicle with all carriages accepting passengers
+     * considered.
+     * This field is still experimental, and subject to change. It may be formally adopted in the
+     * future.
+     */
+    public fun occupancy_percentage(occupancy_percentage: Int?): Builder {
+      this.occupancy_percentage = occupancy_percentage
+      return this
+    }
+
+    /**
+     * Details of the multiple carriages of this given vehicle.
+     * The first occurrence represents the first carriage of the vehicle,
+     * given the current direction of travel.
+     * The number of occurrences of the multi_carriage_details
+     * field represents the number of carriages of the vehicle.
+     * It also includes non boardable carriages,
+     * like engines, maintenance carriages, etc… as they provide valuable
+     * information to passengers about where to stand on a platform.
+     * This message/field is still experimental, and subject to change. It may be formally adopted
+     * in the future.
+     */
+    public fun multi_carriage_details(multi_carriage_details: List<CarriageDetails>): Builder {
+      checkElementsNotNull(multi_carriage_details)
+      this.multi_carriage_details = multi_carriage_details
       return this
     }
 
@@ -284,7 +427,8 @@ public class VehiclePosition(
       timestamp = timestamp,
       congestion_level = congestion_level,
       occupancy_status = occupancy_status,
-      consist = consist,
+      occupancy_percentage = occupancy_percentage,
+      multi_carriage_details = multi_carriage_details,
       unknownFields = buildUnknownFields()
     )
   }
@@ -313,7 +457,9 @@ public class VehiclePosition(
         size += ProtoAdapter.UINT64.encodedSizeWithTag(5, value.timestamp)
         size += CongestionLevel.ADAPTER.encodedSizeWithTag(6, value.congestion_level)
         size += OccupancyStatus.ADAPTER.encodedSizeWithTag(9, value.occupancy_status)
-        size += CarriageDescriptor.ADAPTER.asRepeated().encodedSizeWithTag(1_007, value.consist)
+        size += ProtoAdapter.UINT32.encodedSizeWithTag(10, value.occupancy_percentage)
+        size += CarriageDetails.ADAPTER.asRepeated().encodedSizeWithTag(11,
+            value.multi_carriage_details)
         return size
       }
 
@@ -327,13 +473,15 @@ public class VehiclePosition(
         ProtoAdapter.UINT64.encodeWithTag(writer, 5, value.timestamp)
         CongestionLevel.ADAPTER.encodeWithTag(writer, 6, value.congestion_level)
         OccupancyStatus.ADAPTER.encodeWithTag(writer, 9, value.occupancy_status)
-        CarriageDescriptor.ADAPTER.asRepeated().encodeWithTag(writer, 1_007, value.consist)
+        ProtoAdapter.UINT32.encodeWithTag(writer, 10, value.occupancy_percentage)
+        CarriageDetails.ADAPTER.asRepeated().encodeWithTag(writer, 11, value.multi_carriage_details)
         writer.writeBytes(value.unknownFields)
       }
 
       override fun encode(writer: ReverseProtoWriter, `value`: VehiclePosition) {
         writer.writeBytes(value.unknownFields)
-        CarriageDescriptor.ADAPTER.asRepeated().encodeWithTag(writer, 1_007, value.consist)
+        CarriageDetails.ADAPTER.asRepeated().encodeWithTag(writer, 11, value.multi_carriage_details)
+        ProtoAdapter.UINT32.encodeWithTag(writer, 10, value.occupancy_percentage)
         OccupancyStatus.ADAPTER.encodeWithTag(writer, 9, value.occupancy_status)
         CongestionLevel.ADAPTER.encodeWithTag(writer, 6, value.congestion_level)
         ProtoAdapter.UINT64.encodeWithTag(writer, 5, value.timestamp)
@@ -355,7 +503,8 @@ public class VehiclePosition(
         var timestamp: Long? = null
         var congestion_level: CongestionLevel? = null
         var occupancy_status: OccupancyStatus? = null
-        val consist = mutableListOf<CarriageDescriptor>()
+        var occupancy_percentage: Int? = null
+        val multi_carriage_details = mutableListOf<CarriageDetails>()
         val unknownFields = reader.forEachTag { tag ->
           when (tag) {
             1 -> trip = TripDescriptor.ADAPTER.decode(reader)
@@ -379,7 +528,8 @@ public class VehiclePosition(
             } catch (e: ProtoAdapter.EnumConstantNotFoundException) {
               reader.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
             }
-            1_007 -> consist.add(CarriageDescriptor.ADAPTER.decode(reader))
+            10 -> occupancy_percentage = ProtoAdapter.UINT32.decode(reader)
+            11 -> multi_carriage_details.add(CarriageDetails.ADAPTER.decode(reader))
             else -> reader.readUnknownField(tag)
           }
         }
@@ -393,7 +543,8 @@ public class VehiclePosition(
           timestamp = timestamp,
           congestion_level = congestion_level,
           occupancy_status = occupancy_status,
-          consist = consist,
+          occupancy_percentage = occupancy_percentage,
+          multi_carriage_details = multi_carriage_details,
           unknownFields = unknownFields
         )
       }
@@ -402,7 +553,8 @@ public class VehiclePosition(
         trip = value.trip?.let(TripDescriptor.ADAPTER::redact),
         vehicle = value.vehicle?.let(VehicleDescriptor.ADAPTER::redact),
         position = value.position?.let(Position.ADAPTER::redact),
-        consist = value.consist.redactElements(CarriageDescriptor.ADAPTER),
+        multi_carriage_details =
+            value.multi_carriage_details.redactElements(CarriageDetails.ADAPTER),
         unknownFields = ByteString.EMPTY
       )
     }
@@ -417,8 +569,18 @@ public class VehiclePosition(
   public enum class VehicleStopStatus(
     override val `value`: Int,
   ) : WireEnum {
+    /**
+     * The vehicle is just about to arrive at the stop (on a stop
+     * display, the vehicle symbol typically flashes).
+     */
     INCOMING_AT(0),
+    /**
+     * The vehicle is standing at the stop.
+     */
     STOPPED_AT(1),
+    /**
+     * The vehicle has departed and is in transit to the next stop.
+     */
     IN_TRANSIT_TO(2),
     ;
 
@@ -443,6 +605,9 @@ public class VehiclePosition(
     }
   }
 
+  /**
+   * Congestion level that is affecting this vehicle.
+   */
   public enum class CongestionLevel(
     override val `value`: Int,
   ) : WireEnum {
@@ -451,7 +616,7 @@ public class VehiclePosition(
     STOP_AND_GO(2),
     CONGESTION(3),
     /**
-     * NEW
+     * People leaving their cars.
      */
     SEVERE_CONGESTION(4),
     ;
@@ -478,16 +643,67 @@ public class VehiclePosition(
     }
   }
 
+  /**
+   * The state of passenger occupancy for the vehicle or carriage.
+   * Individual producers may not publish all OccupancyStatus values. Therefore, consumers
+   * must not assume that the OccupancyStatus values follow a linear scale.
+   * Consumers should represent OccupancyStatus values as the state indicated
+   * and intended by the producer. Likewise, producers must use OccupancyStatus values that
+   * correspond to actual vehicle occupancy states.
+   * For describing passenger occupancy levels on a linear scale, see `occupancy_percentage`.
+   * This field is still experimental, and subject to change. It may be formally adopted in the
+   * future.
+   */
   public enum class OccupancyStatus(
     override val `value`: Int,
   ) : WireEnum {
+    /**
+     * The vehicle or carriage is considered empty by most measures, and has few or no
+     * passengers onboard, but is still accepting passengers.
+     */
     EMPTY(0),
+    /**
+     * The vehicle or carriage has a large number of seats available.
+     * The amount of free seats out of the total seats available to be
+     * considered large enough to fall into this category is determined at the
+     * discretion of the producer.
+     */
     MANY_SEATS_AVAILABLE(1),
+    /**
+     * The vehicle or carriage has a relatively small number of seats available.
+     * The amount of free seats out of the total seats available to be
+     * considered small enough to fall into this category is determined at the
+     * discretion of the feed producer.
+     */
     FEW_SEATS_AVAILABLE(2),
+    /**
+     * The vehicle or carriage can currently accommodate only standing passengers.
+     */
     STANDING_ROOM_ONLY(3),
+    /**
+     * The vehicle or carriage can currently accommodate only standing passengers
+     * and has limited space for them.
+     */
     CRUSHED_STANDING_ROOM_ONLY(4),
+    /**
+     * The vehicle or carriage is considered full by most measures, but may still be
+     * allowing passengers to board.
+     */
     FULL(5),
+    /**
+     * The vehicle or carriage is not accepting passengers, but usually accepts passengers for
+     * boarding.
+     */
     NOT_ACCEPTING_PASSENGERS(6),
+    /**
+     * The vehicle or carriage doesn't have any occupancy data available at that time.
+     */
+    NO_DATA_AVAILABLE(7),
+    /**
+     * The vehicle or carriage is not boardable and never accepts passengers.
+     * Useful for special vehicles or carriages (engine, maintenance carriage, etc…).
+     */
+    NOT_BOARDABLE(8),
     ;
 
     public companion object {
@@ -509,8 +725,323 @@ public class VehiclePosition(
         4 -> CRUSHED_STANDING_ROOM_ONLY
         5 -> FULL
         6 -> NOT_ACCEPTING_PASSENGERS
+        7 -> NO_DATA_AVAILABLE
+        8 -> NOT_BOARDABLE
         else -> null
       }
+    }
+  }
+
+  /**
+   * Carriage specific details, used for vehicles composed of several carriages
+   * This message/field is still experimental, and subject to change. It may be formally adopted in
+   * the future.
+   */
+  public class CarriageDetails(
+    /**
+     * Identification of the carriage. Should be unique per vehicle.
+     */
+    @field:WireField(
+      tag = 1,
+      adapter = "com.squareup.wire.ProtoAdapter#STRING",
+      schemaIndex = 0,
+    )
+    @JvmField
+    public val id: String? = null,
+    /**
+     * User visible label that may be shown to the passenger to help identify
+     * the carriage. Example: "7712", "Car ABC-32", etc...
+     * This message/field is still experimental, and subject to change. It may be formally adopted
+     * in the future.
+     */
+    @field:WireField(
+      tag = 2,
+      adapter = "com.squareup.wire.ProtoAdapter#STRING",
+      schemaIndex = 1,
+    )
+    @JvmField
+    public val label: String? = null,
+    /**
+     * Occupancy status for this given carriage, in this vehicle
+     * This message/field is still experimental, and subject to change. It may be formally adopted
+     * in the future.
+     */
+    @field:WireField(
+      tag = 3,
+      adapter = "xyz.ksharma.transit.realtime.VehiclePosition${'$'}OccupancyStatus#ADAPTER",
+      schemaIndex = 2,
+    )
+    @JvmField
+    public val occupancy_status: OccupancyStatus? = null,
+    /**
+     * Occupancy percentage for this given carriage, in this vehicle.
+     * Follows the same rules as "VehiclePosition.occupancy_percentage"
+     * -1 in case data is not available for this given carriage (as protobuf defaults to 0
+     * otherwise)
+     * This message/field is still experimental, and subject to change. It may be formally adopted
+     * in the future.
+     */
+    @field:WireField(
+      tag = 4,
+      adapter = "com.squareup.wire.ProtoAdapter#INT32",
+      schemaIndex = 3,
+    )
+    @JvmField
+    public val occupancy_percentage: Int? = null,
+    /**
+     * Identifies the order of this carriage with respect to the other
+     * carriages in the vehicle's list of CarriageDetails.
+     * The first carriage in the direction of travel must have a value of 1.
+     * The second value corresponds to the second carriage in the direction
+     * of travel and must have a value of 2, and so forth.
+     * For example, the first carriage in the direction of travel has a value of 1.
+     * If the second carriage in the direction of travel has a value of 3,
+     * consumers will discard data for all carriages (i.e., the multi_carriage_details field).
+     * Carriages without data must be represented with a valid carriage_sequence number and the
+     * fields
+     * without data should be omitted (alternately, those fields could also be included and set to
+     * the "no data" values).
+     * This message/field is still experimental, and subject to change. It may be formally adopted
+     * in the future.
+     */
+    @field:WireField(
+      tag = 5,
+      adapter = "com.squareup.wire.ProtoAdapter#UINT32",
+      schemaIndex = 4,
+    )
+    @JvmField
+    public val carriage_sequence: Int? = null,
+    unknownFields: ByteString = ByteString.EMPTY,
+  ) : Message<CarriageDetails, CarriageDetails.Builder>(ADAPTER, unknownFields) {
+    override fun newBuilder(): Builder {
+      val builder = Builder()
+      builder.id = id
+      builder.label = label
+      builder.occupancy_status = occupancy_status
+      builder.occupancy_percentage = occupancy_percentage
+      builder.carriage_sequence = carriage_sequence
+      builder.addUnknownFields(unknownFields)
+      return builder
+    }
+
+    override fun equals(other: Any?): Boolean {
+      if (other === this) return true
+      if (other !is CarriageDetails) return false
+      if (unknownFields != other.unknownFields) return false
+      if (id != other.id) return false
+      if (label != other.label) return false
+      if (occupancy_status != other.occupancy_status) return false
+      if (occupancy_percentage != other.occupancy_percentage) return false
+      if (carriage_sequence != other.carriage_sequence) return false
+      return true
+    }
+
+    override fun hashCode(): Int {
+      var result = super.hashCode
+      if (result == 0) {
+        result = unknownFields.hashCode()
+        result = result * 37 + (id?.hashCode() ?: 0)
+        result = result * 37 + (label?.hashCode() ?: 0)
+        result = result * 37 + (occupancy_status?.hashCode() ?: 0)
+        result = result * 37 + (occupancy_percentage?.hashCode() ?: 0)
+        result = result * 37 + (carriage_sequence?.hashCode() ?: 0)
+        super.hashCode = result
+      }
+      return result
+    }
+
+    override fun toString(): String {
+      val result = mutableListOf<String>()
+      if (id != null) result += """id=${sanitize(id)}"""
+      if (label != null) result += """label=${sanitize(label)}"""
+      if (occupancy_status != null) result += """occupancy_status=$occupancy_status"""
+      if (occupancy_percentage != null) result += """occupancy_percentage=$occupancy_percentage"""
+      if (carriage_sequence != null) result += """carriage_sequence=$carriage_sequence"""
+      return result.joinToString(prefix = "CarriageDetails{", separator = ", ", postfix = "}")
+    }
+
+    public fun copy(
+      id: String? = this.id,
+      label: String? = this.label,
+      occupancy_status: OccupancyStatus? = this.occupancy_status,
+      occupancy_percentage: Int? = this.occupancy_percentage,
+      carriage_sequence: Int? = this.carriage_sequence,
+      unknownFields: ByteString = this.unknownFields,
+    ): CarriageDetails = CarriageDetails(id, label, occupancy_status, occupancy_percentage,
+        carriage_sequence, unknownFields)
+
+    public class Builder : Message.Builder<CarriageDetails, Builder>() {
+      @JvmField
+      public var id: String? = null
+
+      @JvmField
+      public var label: String? = null
+
+      @JvmField
+      public var occupancy_status: OccupancyStatus? = null
+
+      @JvmField
+      public var occupancy_percentage: Int? = null
+
+      @JvmField
+      public var carriage_sequence: Int? = null
+
+      /**
+       * Identification of the carriage. Should be unique per vehicle.
+       */
+      public fun id(id: String?): Builder {
+        this.id = id
+        return this
+      }
+
+      /**
+       * User visible label that may be shown to the passenger to help identify
+       * the carriage. Example: "7712", "Car ABC-32", etc...
+       * This message/field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      public fun label(label: String?): Builder {
+        this.label = label
+        return this
+      }
+
+      /**
+       * Occupancy status for this given carriage, in this vehicle
+       * This message/field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      public fun occupancy_status(occupancy_status: OccupancyStatus?): Builder {
+        this.occupancy_status = occupancy_status
+        return this
+      }
+
+      /**
+       * Occupancy percentage for this given carriage, in this vehicle.
+       * Follows the same rules as "VehiclePosition.occupancy_percentage"
+       * -1 in case data is not available for this given carriage (as protobuf defaults to 0
+       * otherwise)
+       * This message/field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      public fun occupancy_percentage(occupancy_percentage: Int?): Builder {
+        this.occupancy_percentage = occupancy_percentage
+        return this
+      }
+
+      /**
+       * Identifies the order of this carriage with respect to the other
+       * carriages in the vehicle's list of CarriageDetails.
+       * The first carriage in the direction of travel must have a value of 1.
+       * The second value corresponds to the second carriage in the direction
+       * of travel and must have a value of 2, and so forth.
+       * For example, the first carriage in the direction of travel has a value of 1.
+       * If the second carriage in the direction of travel has a value of 3,
+       * consumers will discard data for all carriages (i.e., the multi_carriage_details field).
+       * Carriages without data must be represented with a valid carriage_sequence number and the
+       * fields
+       * without data should be omitted (alternately, those fields could also be included and set to
+       * the "no data" values).
+       * This message/field is still experimental, and subject to change. It may be formally adopted
+       * in the future.
+       */
+      public fun carriage_sequence(carriage_sequence: Int?): Builder {
+        this.carriage_sequence = carriage_sequence
+        return this
+      }
+
+      override fun build(): CarriageDetails = CarriageDetails(
+        id = id,
+        label = label,
+        occupancy_status = occupancy_status,
+        occupancy_percentage = occupancy_percentage,
+        carriage_sequence = carriage_sequence,
+        unknownFields = buildUnknownFields()
+      )
+    }
+
+    public companion object {
+      @JvmField
+      public val DEFAULT_OCCUPANCY_STATUS: OccupancyStatus = OccupancyStatus.NO_DATA_AVAILABLE
+
+      public const val DEFAULT_OCCUPANCY_PERCENTAGE: Int = -1
+
+      @JvmField
+      public val ADAPTER: ProtoAdapter<CarriageDetails> = object : ProtoAdapter<CarriageDetails>(
+        FieldEncoding.LENGTH_DELIMITED, 
+        CarriageDetails::class, 
+        "type.googleapis.com/transit_realtime.VehiclePosition.CarriageDetails", 
+        PROTO_2, 
+        null, 
+        "xyz/ksharma/transport/gtfs_realtime.proto"
+      ) {
+        override fun encodedSize(`value`: CarriageDetails): Int {
+          var size = value.unknownFields.size
+          size += ProtoAdapter.STRING.encodedSizeWithTag(1, value.id)
+          size += ProtoAdapter.STRING.encodedSizeWithTag(2, value.label)
+          size += OccupancyStatus.ADAPTER.encodedSizeWithTag(3, value.occupancy_status)
+          size += ProtoAdapter.INT32.encodedSizeWithTag(4, value.occupancy_percentage)
+          size += ProtoAdapter.UINT32.encodedSizeWithTag(5, value.carriage_sequence)
+          return size
+        }
+
+        override fun encode(writer: ProtoWriter, `value`: CarriageDetails) {
+          ProtoAdapter.STRING.encodeWithTag(writer, 1, value.id)
+          ProtoAdapter.STRING.encodeWithTag(writer, 2, value.label)
+          OccupancyStatus.ADAPTER.encodeWithTag(writer, 3, value.occupancy_status)
+          ProtoAdapter.INT32.encodeWithTag(writer, 4, value.occupancy_percentage)
+          ProtoAdapter.UINT32.encodeWithTag(writer, 5, value.carriage_sequence)
+          writer.writeBytes(value.unknownFields)
+        }
+
+        override fun encode(writer: ReverseProtoWriter, `value`: CarriageDetails) {
+          writer.writeBytes(value.unknownFields)
+          ProtoAdapter.UINT32.encodeWithTag(writer, 5, value.carriage_sequence)
+          ProtoAdapter.INT32.encodeWithTag(writer, 4, value.occupancy_percentage)
+          OccupancyStatus.ADAPTER.encodeWithTag(writer, 3, value.occupancy_status)
+          ProtoAdapter.STRING.encodeWithTag(writer, 2, value.label)
+          ProtoAdapter.STRING.encodeWithTag(writer, 1, value.id)
+        }
+
+        override fun decode(reader: ProtoReader): CarriageDetails {
+          var id: String? = null
+          var label: String? = null
+          var occupancy_status: OccupancyStatus? = null
+          var occupancy_percentage: Int? = null
+          var carriage_sequence: Int? = null
+          val unknownFields = reader.forEachTag { tag ->
+            when (tag) {
+              1 -> id = ProtoAdapter.STRING.decode(reader)
+              2 -> label = ProtoAdapter.STRING.decode(reader)
+              3 -> try {
+                occupancy_status = OccupancyStatus.ADAPTER.decode(reader)
+              } catch (e: ProtoAdapter.EnumConstantNotFoundException) {
+                reader.addUnknownField(tag, FieldEncoding.VARINT, e.value.toLong())
+              }
+              4 -> occupancy_percentage = ProtoAdapter.INT32.decode(reader)
+              5 -> carriage_sequence = ProtoAdapter.UINT32.decode(reader)
+              else -> reader.readUnknownField(tag)
+            }
+          }
+          return CarriageDetails(
+            id = id,
+            label = label,
+            occupancy_status = occupancy_status,
+            occupancy_percentage = occupancy_percentage,
+            carriage_sequence = carriage_sequence,
+            unknownFields = unknownFields
+          )
+        }
+
+        override fun redact(`value`: CarriageDetails): CarriageDetails = value.copy(
+          unknownFields = ByteString.EMPTY
+        )
+      }
+
+      private const val serialVersionUID: Long = 0L
+
+      @JvmSynthetic
+      public inline fun build(body: Builder.() -> Unit): CarriageDetails =
+          Builder().apply(body).build()
     }
   }
 }
